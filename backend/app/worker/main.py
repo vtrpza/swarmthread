@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from app.db import engine
 from app.logging import configure_logging, get_logger
 from app.models import Run, RunStatus
+from app.services.simulation_runner import SimulationRunner
 
 configure_logging()
 logger = get_logger(__name__)
@@ -39,24 +40,14 @@ def process_run(run: Run, session: Session):
         round_count=run.round_count,
     )
 
-    run.status = RunStatus.running
-    session.add(run)
-    session.commit()
+    runner = SimulationRunner(session)
 
     try:
-        pass
+        runner.run_simulation(run)
+        runner.run_analysis(run)
+        logger.info("Run completed successfully", run_id=str(run.id))
     except Exception as e:
-        run.status = RunStatus.failed
-        run.error_message = str(e)
-        session.add(run)
-        session.commit()
         logger.error("Run failed", run_id=str(run.id), error=str(e))
-        return
-
-    run.status = RunStatus.completed
-    session.add(run)
-    session.commit()
-    logger.info("Run completed", run_id=str(run.id))
 
 
 if __name__ == "__main__":

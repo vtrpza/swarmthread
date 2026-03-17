@@ -8,54 +8,29 @@ SwarmThread is a batch simulation system for predictive analysis of marketing co
 
 ## Build/Lint/Test Commands
 
-### Package management (uv)
-
 ```bash
 uv sync                    # Install dependencies
 uv sync --frozen           # Install from lockfile (CI/deploy)
-uv add <package>           # Add dependency
-uv add --dev <package>      # Add dev dependency
-```
 
-### Running the application
-
-```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload  # Run API server
 uv run python -m app.worker.main    # Background worker
-```
 
-### Database migrations (Alembic)
+uv run alembic revision --autogenerate -m "description"  # Create migration
+uv run alembic upgrade head  # Apply migrations
+uv run alembic downgrade -1   # Rollback one migration
 
-```bash
-uv run alembic revision --autogenerate -m "description"
-uv run alembic upgrade head
-uv run alembic downgrade -1
-```
+uv run ruff check .    # Lint
+uv run ruff check . --fix  # Auto-fix lint errors
+uv run ruff format .   # Format
+uv run mypy app        # Type check
 
-### Linting and formatting
-
-```bash
-uv run ruff check .                    # Lint
-uv run ruff check . --fix              # Auto-fix
-uv run ruff format .                    # Format
-uv run mypy app                         # Type check
-```
-
-### Testing
-
-```bash
-uv run pytest                           # Run all tests
-uv run pytest tests/test_api -v         # Run specific directory
-uv run pytest tests/test_services/test_simulation.py -v  # Run single file
+uv run pytest          # Run all tests
+uv run pytest tests/test_api -v  # Run specific directory
+uv run pytest tests/test_api/test_runs.py -v  # Run single file
 uv run pytest tests/test_api/test_runs.py::test_create_run -v  # Run single test
-uv run pytest -k "create_run" -v        # Run tests matching pattern
+uv run pytest -k "create_run" -v  # Run tests matching pattern
 uv run pytest --cov=app --cov-report=term-missing  # With coverage
-```
-
-### Pre-commit
-
-```bash
-uv run pre-commit run --all-files
+uv run pre-commit run --all-files  # Run all pre-commit hooks
 ```
 
 ## Code Style Guidelines
@@ -65,14 +40,18 @@ uv run pre-commit run --all-files
 Standard library first, then third-party, then local imports. Use absolute imports from `app`.
 
 ```python
-import os
-from typing import Optional
+import enum
+from datetime import datetime
+from uuid import UUID, uuid4
 
-from fastapi import Depends, HTTPException
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlmodel import Field, Session, SQLModel
+from sqlalchemy import Column, JSON
 
 from app.config import settings
-from app.models.run import Run
+from app.db import SessionDep
+from app.models import Run, RunStatus
 ```
 
 ### Formatting
@@ -85,10 +64,10 @@ from app.models.run import Run
 ### Types
 
 - Use Python type hints on all function signatures.
-- Use `Optional[T]` for optional values, not `T | None`.
+- Use `T | None` for optional values (not `Optional[T]`).
 - Use `list[T]`, `dict[str, T]` instead of `List[T]`, `Dict[str, T]`.
 - SQLModel models inherit from `SQLModel, table=True`.
-- Pydantic schemas for API requests/responses inherit from `BaseModel`.
+- Pydantic schemas inherit from `BaseModel`.
 
 ### Naming conventions
 
@@ -99,31 +78,43 @@ from app.models.run import Run
 - Private methods: `_leading_underscore`
 - Database tables: `snake_case` (pluralized: `runs`, `agents`, `posts`)
 
+### Enums
+
+Use `enum.StrEnum` for enumeration types:
+
+```python
+import enum
+
+class RunStatus(enum.StrEnum):
+    queued = "queued"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+```
+
 ### Error handling
 
 - Raise `HTTPException(status_code=..., detail=...)` in API routes.
-- Use custom exception classes in `app/exceptions.py` for domain errors.
-- Log errors with `structlog` using `logger.error("message", key=value)`.
+- Log errors with structlog using `logger.error("message", key=value)`.
 - Never expose internal errors or stack traces to clients.
 - Validate all LLM responses against JSON schema before database writes.
 
 ### FastAPI patterns
 
 ```python
-from fastapi import APIRouter, Depends
-from sqlmodel import Session
-
-from app.db import get_session
+from fastapi import APIRouter
+from app.db import SessionDep
 from app.schemas.run import RunCreate, RunRead
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 @router.post("/", response_model=RunRead, status_code=201)
-def create_run(
-    run_create: RunCreate,
-    session: Session = Depends(get_session),
-) -> Run:
+def create_run(run_create: RunCreate, session: SessionDep) -> Run:
     ...
+
+# SessionDep is defined in app/db.py as:
+# SessionDep = Annotated[Session, Depends(get_session)]
 ```
 
 ### SQLModel patterns
@@ -131,12 +122,16 @@ def create_run(
 ```python
 from datetime import datetime
 from uuid import UUID, uuid4
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
 class Run(SQLModel, table=True):
+    __tablename__ = "runs"  # Explicit table name
+
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    status: str = Field(default="queued")
+    status: RunStatus = Field(default=RunStatus.queued)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    json_field: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 ```
 
 ### Pydantic schemas
@@ -144,6 +139,8 @@ class Run(SQLModel, table=True):
 Separate schemas for creation, update, and read operations:
 
 ```python
+from datetime import datetime
+from uuid import UUID
 from pydantic import BaseModel
 
 class RunBase(BaseModel):
@@ -154,40 +151,40 @@ class RunCreate(RunBase):
     agent_count: int = 20
     round_count: int = 150
 
-class RunRead(RunBase):
+class RunRead(BaseModel):
     id: UUID
-    status: str
+    status: RunStatus
     created_at: datetime
+    completed_at: datetime | None = None
 ```
 
 ### Structured logging
 
-Use `structlog` with JSON output for production:
-
 ```python
-import structlog
-logger = structlog.get_logger()
+from app.logging import get_logger
+logger = get_logger(__name__)
 logger.info("run_started", run_id=str(run.id), agent_count=run.agent_count)
 ```
 
 ### Configuration
 
-Use `pydantic-settings` for environment variables:
-
 ```python
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
     database_url: str
     openrouter_api_key: str
     langfuse_public_key: str | None = None
-    class Config:
-        env_file = ".env"
 
 settings = Settings()
 ```
 
-## Project Structure Conventions
+## Project Structure
 
 - `app/api/`: FastAPI route handlers
 - `app/models/`: SQLModel database models
@@ -197,14 +194,13 @@ settings = Settings()
 - `app/prompts/`: Prompt templates for LLM calls
 - `tests/`: Mirror app structure (`tests/test_api/`, `tests/test_services/`)
 
-## Testing Guidelines
+## Testing
 
-- Use `pytest` with `pytest-asyncio` for async tests.
+- Use `pytest` with `pytest-asyncio` (asyncio_mode = "auto").
 - Use `TestClient` from `fastapi.testclient` for API tests.
-- Use in-memory SQLite for database tests.
+- Use in-memory SQLite: `create_engine("sqlite:///:memory:")`.
 - Mock external services (OpenRouter, Neon) in unit tests.
 - Use fixtures in `tests/conftest.py` for shared test setup.
-- Test validation of LLM JSON schema responses explicitly.
 
 ## Security
 

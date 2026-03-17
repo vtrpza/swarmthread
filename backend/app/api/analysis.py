@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.db import SessionDep
@@ -24,6 +25,21 @@ class AnalysisRead(BaseModel):
     created_at: datetime
 
 
+class RunSummary(BaseModel):
+    id: UUID
+    status: RunStatus
+    agent_count: int
+    round_count: int
+    model_name: str
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class AnalysisExport(BaseModel):
+    run: RunSummary
+    analysis: AnalysisRead
+
+
 @router.get("/{run_id}/analysis", response_model=AnalysisRead)
 def get_analysis(run_id: UUID, session: SessionDep) -> AnalysisReport:
     run = session.get(Run, run_id)
@@ -43,3 +59,53 @@ def get_analysis(run_id: UUID, session: SessionDep) -> AnalysisReport:
         raise HTTPException(status_code=404, detail="Analysis report not found")
 
     return report
+
+
+@router.get("/{run_id}/analysis/export", response_model=AnalysisExport)
+def export_analysis(run_id: UUID, session: SessionDep) -> JSONResponse:
+    run = session.get(Run, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    if run.status != RunStatus.completed:
+        raise HTTPException(
+            status_code=400, detail="Analysis is only available for completed runs"
+        )
+
+    report = (
+        session.query(AnalysisReport).filter(AnalysisReport.run_id == run_id).first()
+    )
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Analysis report not found")
+
+    run_summary = RunSummary(
+        id=run.id,
+        status=run.status,
+        agent_count=run.agent_count,
+        round_count=run.round_count,
+        model_name=run.model_name,
+        created_at=run.created_at,
+        completed_at=run.completed_at,
+    )
+
+    analysis_read = AnalysisRead(
+        id=report.id,
+        run_id=report.run_id,
+        predicted_engagement=report.predicted_engagement,
+        predicted_shareability=report.predicted_shareability,
+        predicted_conversion_signal=report.predicted_conversion_signal,
+        predicted_trust=report.predicted_trust,
+        top_positive_themes=report.top_positive_themes,
+        top_negative_themes=report.top_negative_themes,
+        top_objections=report.top_objections,
+        recommended_rewrite=report.recommended_rewrite,
+        created_at=report.created_at,
+    )
+
+    export_data = AnalysisExport(run=run_summary, analysis=analysis_read)
+
+    return JSONResponse(
+        content=export_data.model_dump(mode="json"),
+        headers={"Content-Disposition": f"attachment; filename=analysis_{run_id}.json"},
+    )
