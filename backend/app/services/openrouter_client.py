@@ -9,6 +9,25 @@ from app.logging import get_logger
 
 logger = get_logger(__name__)
 
+_langfuse_client = None
+
+
+def get_langfuse_client():
+    global _langfuse_client
+    if (
+        _langfuse_client is None
+        and settings.langfuse_public_key
+        and settings.langfuse_secret_key
+    ):
+        from langfuse import Langfuse
+
+        _langfuse_client = Langfuse(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            host=settings.langfuse_host,
+        )
+    return _langfuse_client
+
 
 class OpenRouterClient:
     def __init__(self):
@@ -54,7 +73,6 @@ class OpenRouterClient:
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    start_time=start_time,
                 )
 
             latency_ms = int((time.time() - start_time) * 1000)
@@ -87,7 +105,6 @@ class OpenRouterClient:
         model: str,
         temperature: float,
         max_tokens: int,
-        start_time: float,
     ) -> tuple[BaseModel, dict[str, Any]]:
         response = self.client.chat.completions.parse(
             model=model,
@@ -124,14 +141,20 @@ class OpenRouterClient:
         agent_id: str | None,
         stage: str | None,
     ) -> tuple[BaseModel, dict[str, Any]]:
-        from langfuse import Langfuse
-        from langfuse.decorators import observe
+        langfuse_client = get_langfuse_client()
 
-        langfuse_client = Langfuse.instance
-
-        @observe(as_type="generation")
-        def _call_llm():
-            return self.client.chat.completions.parse(
+        with langfuse_client.start_as_current_observation(
+            as_type="generation",
+            name=f"llm_call_{stage or 'unknown'}",
+            input={"messages": messages, "model": model},
+            metadata={
+                "run_id": run_id,
+                "agent_id": agent_id,
+                "stage": stage,
+                "model": model,
+            },
+        ) as observation:
+            response = self.client.chat.completions.parse(
                 model=model,
                 messages=messages,
                 response_format=response_model,
@@ -139,30 +162,26 @@ class OpenRouterClient:
                 max_tokens=max_tokens,
             )
 
-        langfuse_client.update_current_trace(
-            name=f"llm_call_{stage or 'unknown'}",
-            metadata={
-                "run_id": run_id,
-                "agent_id": agent_id,
-                "stage": stage,
-                "model": model,
-            },
-        )
+            usage = response.usage
+            if usage:
+                metadata = {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                }
+                observation.update(
+                    usage={
+                        "input": usage.prompt_tokens,
+                        "output": usage.completion_tokens,
+                    }
+                )
+            else:
+                metadata = {}
 
-        response = _call_llm()
+            parsed = response.choices[0].message.parsed
+            if parsed is None:
+                raise ValueError("No parsed response from model")
 
-        usage = response.usage
-        if usage:
-            metadata = {
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-            }
-        else:
-            metadata = {}
+            observation.update(output={"response": parsed.model_dump()})
 
-        parsed = response.choices[0].message.parsed
-        if parsed is None:
-            raise ValueError("No parsed response from model")
-
-        return parsed, metadata
+            return parsed, metadata

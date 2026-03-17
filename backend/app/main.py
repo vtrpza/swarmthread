@@ -27,13 +27,16 @@ app.include_router(threads_router)
 app.include_router(agents_router)
 app.include_router(analysis_router)
 
+_langfuse_client = None
+
 
 @app.on_event("startup")
 async def startup():
+    global _langfuse_client
     if settings.langfuse_public_key and settings.langfuse_secret_key:
         from langfuse import Langfuse
 
-        Langfuse(
+        _langfuse_client = Langfuse(
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
             host=settings.langfuse_host,
@@ -42,7 +45,6 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    if settings.langfuse_public_key and settings.langfuse_secret_key:
-        from langfuse import Langfuse
-
-        Langfuse.instance.flush()
+    if _langfuse_client is not None:
+        _langfuse_client.flush()
+        _langfuse_client.shutdown()

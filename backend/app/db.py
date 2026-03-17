@@ -5,8 +5,15 @@ from sqlmodel import Session, create_engine
 
 from app.config import settings
 
+
+def get_database_url(url: str) -> str:
+    if url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
 engine = create_engine(
-    settings.database_url, echo=settings.environment == "development"
+    get_database_url(settings.database_url), echo=settings.environment == "development"
 )
 
 
