@@ -1,9 +1,25 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { useCreateRun } from "../hooks/useCreateRun"
-import { AUDIENCE_SEGMENTS, CONTROVERSY_LEVELS, CONTENT_TYPES } from "../types"
+import { useFormDraft } from "../hooks/useFormDraft"
+import {
+  CharacterCounter,
+  SliderField,
+  FormStepper,
+  SegmentSelector,
+} from "../components/forms"
+import { AUDIENCE_SEGMENTS, CONTENT_TYPES, CONTROVERSY_LEVELS } from "../types"
+import type { RunCreate } from "../types"
+import "./HomePage.css"
 
-const DEFAULT_FORM = {
+const FORM_STEPS = [
+  { id: "basic", label: "Basic Info", icon: "1" },
+  { id: "content", label: "Content", icon: "2" },
+  { id: "audience", label: "Audience", icon: "3" },
+  { id: "settings", label: "Settings", icon: "4" },
+]
+
+const DEFAULT_FORM: RunCreate = {
   title: "",
   brand: "",
   goal: "",
@@ -11,26 +27,86 @@ const DEFAULT_FORM = {
   message: "",
   cta: "",
   tone: "",
-  audience_segments: [] as string[],
+  audience_segments: [],
   controversy_level: "low",
   agent_count: 20,
   round_count: 150,
   max_total_cost_usd: 10.0,
 }
 
-function HomePage() {
+const COST_PER_AGENT = 0.02
+
+export default function HomePage() {
   const navigate = useNavigate()
   const createRun = useCreateRun()
-  const [form, setForm] = useState(DEFAULT_FORM)
+  const [currentStep, setCurrentStep] = useState(0)
+  const [showClearDraftConfirm, setShowClearDraftConfirm] = useState(false)
+
+  const {
+    draft: form,
+    updateDraft,
+    clearDraft,
+    hasDraft,
+  } = useFormDraft<RunCreate>({
+    key: "swarmthread:run-draft",
+    defaultValue: DEFAULT_FORM,
+  })
+
+  const completedSteps = useMemo(() => {
+    const completed = new Set<number>()
+
+    // Step 0: Basic Info - requires title, brand, goal
+    if (form.title.trim() && form.brand.trim() && form.goal.trim()) {
+      completed.add(0)
+    }
+
+    // Step 1: Content - requires message, cta, tone
+    if (form.message.trim() && form.cta.trim() && form.tone.trim()) {
+      completed.add(1)
+    }
+
+    // Step 2: Audience - requires at least one segment
+    if (form.audience_segments.length > 0) {
+      completed.add(2)
+    }
+
+    // Step 3: Settings - always completable
+    completed.add(3)
+
+    return completed
+  }, [form])
+
+  const estimatedCost = useMemo(() => {
+    return (form.agent_count ?? 20) * COST_PER_AGENT
+  }, [form.agent_count])
+
+  const isFormValid = useMemo(() => {
+    return (
+      form.title.trim() &&
+      form.brand.trim() &&
+      form.goal.trim() &&
+      form.message.trim() &&
+      form.cta.trim() &&
+      form.tone.trim() &&
+      form.audience_segments.length > 0
+    )
+  }, [form])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const result = await createRun.mutateAsync(form)
-    navigate(`/runs/${result.id}`)
+    if (!isFormValid) return
+
+    try {
+      const result = await createRun.mutateAsync(form)
+      clearDraft()
+      navigate(`/runs/${result.id}`)
+    } catch {
+      // Error is handled by the mutation
+    }
   }
 
   const handleSegmentToggle = (segment: string) => {
-    setForm((prev) => ({
+    updateDraft((prev) => ({
       ...prev,
       audience_segments: prev.audience_segments.includes(segment)
         ? prev.audience_segments.filter((s) => s !== segment)
@@ -38,205 +114,447 @@ function HomePage() {
     }))
   }
 
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1>Create New Run</h1>
-      <p className="text-[var(--text)] mb-8">
-        Set up a batch simulation to predict marketing content impact.
-      </p>
+  const handleSelectAllSegments = () => {
+    updateDraft((prev) => ({
+      ...prev,
+      audience_segments: [...AUDIENCE_SEGMENTS],
+    }))
+  }
 
-      <form onSubmit={handleSubmit} className="space-y-6 text-left">
-        <div>
-          <label className="block text-sm font-medium mb-2">Title</label>
-          <input
-            type="text"
-            required
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-            placeholder="Campaign name"
-          />
-        </div>
+  const handleClearAllSegments = () => {
+    updateDraft((prev) => ({
+      ...prev,
+      audience_segments: [],
+    }))
+  }
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Brand</label>
-            <input
-              type="text"
-              required
-              value={form.brand}
-              onChange={(e) => setForm({ ...form, brand: e.target.value })}
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-              placeholder="Your brand"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Goal</label>
-            <input
-              type="text"
-              required
-              value={form.goal}
-              onChange={(e) => setForm({ ...form, goal: e.target.value })}
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-              placeholder="e.g., Drive signups"
-            />
-          </div>
-        </div>
+  const renderStepContent = (step: number) => {
+    switch (step) {
+      case 0:
+        return (
+          <div className="form-section-content">
+            <div className="form-group">
+              <label className="label label-required" htmlFor="title">
+                Campaign Title
+              </label>
+              <input
+                id="title"
+                type="text"
+                required
+                value={form.title}
+                onChange={(e) =>
+                  updateDraft((prev) => ({ ...prev, title: e.target.value }))
+                }
+                className="input"
+                placeholder="Enter a descriptive name for this campaign"
+                maxLength={100}
+              />
+              <CharacterCounter current={form.title.length} max={100} />
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Content Type</label>
-          <select
-            value={form.content_type}
-            onChange={(e) => setForm({ ...form, content_type: e.target.value })}
-            className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-          >
-            {CONTENT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="label label-required" htmlFor="brand">
+                  Brand Name
+                </label>
+                <input
+                  id="brand"
+                  type="text"
+                  required
+                  value={form.brand}
+                  onChange={(e) =>
+                    updateDraft((prev) => ({ ...prev, brand: e.target.value }))
+                  }
+                  className="input"
+                  placeholder="Your company or product name"
+                  maxLength={50}
+                />
+              </div>
+              <div className="form-group">
+                <label className="label label-required" htmlFor="goal">
+                  Campaign Goal
+                </label>
+                <input
+                  id="goal"
+                  type="text"
+                  required
+                  value={form.goal}
+                  onChange={(e) =>
+                    updateDraft((prev) => ({ ...prev, goal: e.target.value }))
+                  }
+                  className="input"
+                  placeholder="e.g., Drive newsletter signups"
+                  maxLength={100}
+                />
+              </div>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Message</label>
-          <textarea
-            required
-            rows={3}
-            value={form.message}
-            onChange={(e) => setForm({ ...form, message: e.target.value })}
-            className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-            placeholder="The content you want to test"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">CTA</label>
-            <input
-              type="text"
-              required
-              value={form.cta}
-              onChange={(e) => setForm({ ...form, cta: e.target.value })}
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-              placeholder="e.g., Sign up now"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Tone</label>
-            <input
-              type="text"
-              required
-              value={form.tone}
-              onChange={(e) => setForm({ ...form, tone: e.target.value })}
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-              placeholder="e.g., confident, friendly"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Audience Segments
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {AUDIENCE_SEGMENTS.map((segment) => (
-              <button
-                key={segment}
-                type="button"
-                onClick={() => handleSegmentToggle(segment)}
-                className={`px-3 py-1 rounded text-sm transition-colors ${
-                  form.audience_segments.includes(segment)
-                    ? "bg-[var(--accent)] text-white"
-                    : "bg-[var(--border)] text-[var(--text)] hover:bg-[var(--accent-bg)]"
-                }`}
+            <div className="form-group">
+              <label className="label label-required" htmlFor="content_type">
+                Content Type
+              </label>
+              <select
+                id="content_type"
+                value={form.content_type}
+                onChange={(e) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    content_type: e.target.value,
+                  }))
+                }
+                className="input select"
               >
-                {segment}
+                {CONTENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type
+                      .split("_")
+                      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                      .join(" ")}
+                  </option>
+                ))}
+              </select>
+              <p className="field-help-text">
+                Choose the category that best describes your content
+              </p>
+            </div>
+          </div>
+        )
+
+      case 1:
+        return (
+          <div className="form-section-content">
+            <div className="form-group">
+              <label className="label label-required" htmlFor="message">
+                Main Message
+              </label>
+              <textarea
+                id="message"
+                required
+                rows={6}
+                value={form.message}
+                onChange={(e) =>
+                  updateDraft((prev) => ({ ...prev, message: e.target.value }))
+                }
+                className="input textarea"
+                placeholder="Write the content you want to test with your audience..."
+                maxLength={2000}
+              />
+              <CharacterCounter current={form.message.length} max={2000} />
+              <p className="field-help-text">
+                This is the main content that will be shared with simulated
+                audience members
+              </p>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="label label-required" htmlFor="cta">
+                  Call to Action
+                </label>
+                <input
+                  id="cta"
+                  type="text"
+                  required
+                  value={form.cta}
+                  onChange={(e) =>
+                    updateDraft((prev) => ({ ...prev, cta: e.target.value }))
+                  }
+                  className="input"
+                  placeholder="e.g., Get started today"
+                  maxLength={100}
+                />
+                <CharacterCounter current={form.cta.length} max={100} />
+              </div>
+              <div className="form-group">
+                <label className="label label-required" htmlFor="tone">
+                  Tone of Voice
+                </label>
+                <input
+                  id="tone"
+                  type="text"
+                  required
+                  value={form.tone}
+                  onChange={(e) =>
+                    updateDraft((prev) => ({ ...prev, tone: e.target.value }))
+                  }
+                  className="input"
+                  placeholder="e.g., Confident, friendly, professional"
+                  maxLength={100}
+                />
+                <CharacterCounter current={form.tone.length} max={100} />
+              </div>
+            </div>
+          </div>
+        )
+
+      case 2:
+        return (
+          <div className="form-section-content">
+            <div className="form-group">
+              <label className="label">Target Audience Segments</label>
+              <p className="form-help-text">
+                Select the personas you want to simulate in this campaign
+              </p>
+              <SegmentSelector
+                selectedSegments={form.audience_segments}
+                onToggle={handleSegmentToggle}
+                onSelectAll={handleSelectAllSegments}
+                onClearAll={handleClearAllSegments}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="label" htmlFor="controversy_level">
+                Controversy Level
+              </label>
+              <div className="controversy-toggle">
+                {CONTROVERSY_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        controversy_level: level,
+                      }))
+                    }
+                    className={`controversy-btn ${
+                      form.controversy_level === level
+                        ? `controversy-btn-${level} controversy-btn-active`
+                        : ""
+                    }`}
+                  >
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <p className="field-help-text">
+                Higher controversy levels create more polarized reactions
+              </p>
+            </div>
+          </div>
+        )
+
+      case 3:
+        return (
+          <div className="form-section-content">
+            <div className="settings-grid">
+              <SliderField
+                id="agent_count"
+                label="Number of Agents"
+                value={form.agent_count ?? 20}
+                min={5}
+                max={100}
+                onChange={(value) =>
+                  updateDraft((prev) => ({ ...prev, agent_count: value }))
+                }
+                presets={[
+                  { label: "Small (10)", value: 10 },
+                  { label: "Medium (20)", value: 20 },
+                  { label: "Large (50)", value: 50 },
+                ]}
+              />
+
+              <SliderField
+                id="round_count"
+                label="Simulation Rounds"
+                value={form.round_count ?? 150}
+                min={50}
+                max={500}
+                step={10}
+                onChange={(value) =>
+                  updateDraft((prev) => ({ ...prev, round_count: value }))
+                }
+                presets={[
+                  { label: "Quick (100)", value: 100 },
+                  { label: "Standard (150)", value: 150 },
+                  { label: "Thorough (300)", value: 300 },
+                ]}
+              />
+
+              <SliderField
+                id="max_cost"
+                label="Max Cost Budget"
+                value={form.max_total_cost_usd ?? 10}
+                min={1}
+                max={50}
+                step={0.5}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    max_total_cost_usd: value,
+                  }))
+                }
+                formatValue={(v) => `$${v.toFixed(2)}`}
+                presets={[
+                  { label: "$5", value: 5 },
+                  { label: "$10", value: 10 },
+                  { label: "$25", value: 25 },
+                ]}
+              />
+            </div>
+
+            <div className="cost-preview">
+              <div className="cost-preview-header">
+                <span>Estimated Cost</span>
+                <span className="cost-preview-value">
+                  ~${estimatedCost.toFixed(2)}
+                </span>
+              </div>
+              <div className="cost-preview-breakdown">
+                {form.agent_count} agents × ${COST_PER_AGENT.toFixed(2)} per agent
+              </div>
+              {estimatedCost > (form.max_total_cost_usd ?? 10) && (
+                <div className="cost-preview-warning">
+                  Estimated cost exceeds your budget limit
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  return (
+    <main className="home-page">
+      <div className="home-page-container">
+        <header className="home-page-header">
+          <h1 className="home-page-title">Create New Simulation</h1>
+          <p className="home-page-subtitle">
+            Set up a batch simulation to predict marketing content impact
+          </p>
+          {hasDraft && (
+            <div className="draft-indicator">
+              <span>Draft auto-saved</span>
+              <button
+                type="button"
+                onClick={() => setShowClearDraftConfirm(true)}
+                className="draft-clear-btn"
+              >
+                Clear draft
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
+        </header>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Controversy Level
-          </label>
-          <select
-            value={form.controversy_level}
-            onChange={(e) =>
-              setForm({ ...form, controversy_level: e.target.value })
-            }
-            className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-          >
-            {CONTROVERSY_LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </div>
+        <FormStepper
+          steps={FORM_STEPS}
+          currentStep={currentStep}
+          completedSteps={completedSteps}
+          onStepClick={setCurrentStep}
+        />
 
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Agents</label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={form.agent_count}
-              onChange={(e) =>
-                setForm({ ...form, agent_count: parseInt(e.target.value) || 20 })
-              }
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Rounds</label>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={form.round_count}
-              onChange={(e) =>
-                setForm({ ...form, round_count: parseInt(e.target.value) || 150 })
-              }
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Max Cost ($)</label>
-            <input
-              type="number"
-              min={1}
-              step={0.5}
-              value={form.max_total_cost_usd}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  max_total_cost_usd: parseFloat(e.target.value) || 10,
-                })
-              }
-              className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-[var(--text-h)]"
-            />
-          </div>
-        </div>
+        <form onSubmit={handleSubmit} className="home-page-form">
+          <div className="form-section-wrapper">
+            <div className="form-section-header">
+              <h2 className="form-section-title">
+                <span className="form-section-icon">{FORM_STEPS[currentStep].icon}</span>
+                {FORM_STEPS[currentStep].label}
+              </h2>
+              <div className="form-section-progress">
+                {completedSteps.has(currentStep) && (
+                  <span className="section-complete-badge">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Complete
+                  </span>
+                )}
+              </div>
+            </div>
 
-        <button
-          type="submit"
-          disabled={createRun.isPending}
-          className="w-full py-3 px-4 bg-[var(--accent)] text-white rounded font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            {renderStepContent(currentStep)}
+          </div>
+
+          <div className="form-navigation">
+            <button
+              type="button"
+              onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+              disabled={currentStep === 0}
+              className="btn btn-secondary"
+            >
+              Previous
+            </button>
+
+            {currentStep < FORM_STEPS.length - 1 ? (
+              <button
+                type="button"
+                onClick={() => setCurrentStep((s) => Math.min(FORM_STEPS.length - 1, s + 1))}
+                className="btn btn-primary"
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={createRun.isPending || !isFormValid}
+                className="btn btn-primary btn-lg"
+              >
+                {createRun.isPending ? (
+                  <>
+                    <span className="btn-spinner" />
+                    Creating Run...
+                  </>
+                ) : (
+                  "Create Simulation Run"
+                )}
+              </button>
+            )}
+          </div>
+
+          {createRun.isError && (
+            <div className="error-state" role="alert">
+              <div className="error-state-title">Error</div>
+              <div>
+                {createRun.error instanceof Error
+                  ? createRun.error.message
+                  : "Failed to create run"}
+              </div>
+            </div>
+          )}
+        </form>
+      </div>
+
+      {showClearDraftConfirm && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowClearDraftConfirm(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="clear-draft-title"
         >
-          {createRun.isPending ? "Creating..." : "Create Run"}
-        </button>
-
-        {createRun.isError && (
-          <div className="p-3 rounded bg-red-100 text-red-700">
-            Error: {createRun.error instanceof Error ? createRun.error.message : "Failed to create run"}
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 id="clear-draft-title" className="modal-title">
+              Clear Draft?
+            </h3>
+            <p className="modal-description">
+              This will remove all saved form data and reset to defaults.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => setShowClearDraftConfirm(false)}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearDraft()
+                  setShowClearDraftConfirm(false)
+                }}
+                className="btn btn-primary"
+              >
+                Clear Draft
+              </button>
+            </div>
           </div>
-        )}
-      </form>
-    </div>
+        </div>
+      )}
+    </main>
   )
 }
-
-export default HomePage

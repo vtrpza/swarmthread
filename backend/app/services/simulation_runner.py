@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlmodel import Session
 
 from app.logging import get_logger
@@ -71,9 +72,8 @@ class SimulationRunner:
         self.session.commit()
         return agents
 
-    def create_seed_post(self, run: Run, agents: list[Agent]) -> Post:
+    def create_seed_post(self, run: Run, agents: list[Agent], seed: RunSeed) -> Post:
         brand_agent = agents[0]
-        seed = self.session.get(RunSeed, run.id)
         content = f"{seed.message}\n\n{seed.cta}"
 
         post = Post(
@@ -219,8 +219,12 @@ class SimulationRunner:
 
         try:
             agents = self.create_agents(run)
-            seed_post = self.create_seed_post(run, agents)
-            seed = self.session.get(RunSeed, run.id)
+            seed = self.session.exec(
+                select(RunSeed).where(RunSeed.run_id == run.id)
+            ).first()
+            if not seed:
+                raise ValueError(f"RunSeed not found for run {run.id}")
+            seed_post = self.create_seed_post(run, agents, seed)
 
             all_posts = [seed_post]
             post_map = {seed_post.id: seed_post}
@@ -340,7 +344,11 @@ class SimulationRunner:
             raise
 
     def run_analysis(self, run: Run) -> AnalysisReport:
-        seed = self.session.get(RunSeed, run.id)
+        seed = self.session.exec(
+            select(RunSeed).where(RunSeed.run_id == run.id)
+        ).first()
+        if not seed:
+            raise ValueError(f"RunSeed not found for run {run.id}")
         agents = self.session.query(Agent).filter(Agent.run_id == run.id).all()
         posts = self.session.query(Post).filter(Post.run_id == run.id).all()
         interactions = (

@@ -83,7 +83,7 @@ def export_run(run_id: UUID, session: SessionDep) -> dict:
             detail="Run must be completed or cancelled to export",
         )
 
-    seed = session.get(RunSeed, run_id)
+    seed = session.exec(select(RunSeed).where(RunSeed.run_id == run_id)).first()
     if not seed:
         raise HTTPException(status_code=404, detail="Run seed not found")
 
