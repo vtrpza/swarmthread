@@ -21,6 +21,7 @@ from app.models import (
     Stance,
 )
 from app.services.action_validator import ActionValidator, AgentAction
+from app.services.cost_guard import CostGuard
 from app.services.openrouter_client import OpenRouterClient
 from app.services.personas import PERSONA_ARCHETYPES, generate_agent_handle
 from app.services.prompt_builder import (
@@ -47,6 +48,7 @@ class SimulationRunner:
         self.session = session
         self.client = OpenRouterClient()
         self.validator = ActionValidator()
+        self.cost_guard: CostGuard | None = None
 
     def create_agents(self, run: Run) -> list[Agent]:
         agents = []
@@ -211,6 +213,10 @@ class SimulationRunner:
         self.session.add(run)
         self.session.commit()
 
+        self.cost_guard = CostGuard(
+            max_total_cost_usd=run.max_total_cost_usd, model=run.model_name
+        )
+
         try:
             agents = self.create_agents(run)
             seed_post = self.create_seed_post(run, agents)
@@ -220,6 +226,24 @@ class SimulationRunner:
             post_map = {seed_post.id: seed_post}
 
             for round_num in range(1, run.round_count + 1):
+                if self.cost_guard.should_cancel():
+                    run.status = RunStatus.cancelled
+                    error_msg = (
+                        f"Budget exceeded: ${self.cost_guard.total_cost_usd:.4f} "
+                        f">= ${run.max_total_cost_usd:.2f}"
+                    )
+                    run.error_message = error_msg
+                    run.completed_at = datetime.utcnow()
+                    self.session.add(run)
+                    self.session.commit()
+                    logger.warning(
+                        "Simulation cancelled due to budget breach",
+                        run_id=str(run.id),
+                        total_cost=self.cost_guard.total_cost_usd,
+                        max_budget=run.max_total_cost_usd,
+                    )
+                    return
+
                 logger.info(
                     "Starting round",
                     run_id=str(run.id),
@@ -246,6 +270,14 @@ class SimulationRunner:
                             messages=messages,
                             response_model=AgentAction,
                             model=run.model_name,
+                            run_id=str(run.id),
+                            agent_id=str(agent.id),
+                            stage="agent_action",
+                        )
+
+                        cost = self.cost_guard.add_cost(
+                            metadata.get("prompt_tokens", 0),
+                            metadata.get("completion_tokens", 0),
                         )
 
                         llm_call = LLMCall(
@@ -256,12 +288,7 @@ class SimulationRunner:
                             model_name=run.model_name,
                             prompt_tokens=metadata.get("prompt_tokens", 0),
                             completion_tokens=metadata.get("completion_tokens", 0),
-                            estimated_cost_usd=(
-                                metadata.get("prompt_tokens", 0) * 0.40 / 1_000_000
-                                + metadata.get("completion_tokens", 0)
-                                * 1.20
-                                / 1_000_000
-                            ),
+                            estimated_cost_usd=cost,
                             latency_ms=metadata.get("latency_ms", 0),
                             success=True,
                             error_message=None,
@@ -367,7 +394,20 @@ class SimulationRunner:
 
         try:
             result, metadata = self.client.parse(
-                messages=messages, response_model=AnalysisResult, model=run.model_name
+                messages=messages,
+                response_model=AnalysisResult,
+                model=run.model_name,
+                run_id=str(run.id),
+                stage="final_analysis",
+            )
+
+            cost = (
+                self.cost_guard.add_cost(
+                    metadata.get("prompt_tokens", 0),
+                    metadata.get("completion_tokens", 0),
+                )
+                if self.cost_guard
+                else 0.0
             )
 
             report = AnalysisReport(
@@ -393,10 +433,7 @@ class SimulationRunner:
                 model_name=run.model_name,
                 prompt_tokens=metadata.get("prompt_tokens", 0),
                 completion_tokens=metadata.get("completion_tokens", 0),
-                estimated_cost_usd=(
-                    metadata.get("prompt_tokens", 0) * 0.40 / 1_000_000
-                    + metadata.get("completion_tokens", 0) * 1.20 / 1_000_000
-                ),
+                estimated_cost_usd=cost,
                 latency_ms=metadata.get("latency_ms", 0),
                 success=True,
                 error_message=None,

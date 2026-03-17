@@ -7,16 +7,6 @@ from sqlmodel import SQLModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
-from app.models import (
-    Agent,
-    AnalysisReport,
-    Follow,
-    Interaction,
-    LLMCall,
-    Post,
-    Run,
-    RunSeed,
-)
 
 config = context.config
 

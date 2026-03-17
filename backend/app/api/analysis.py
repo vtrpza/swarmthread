@@ -1,6 +1,8 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.db import SessionDep
 from app.models import AnalysisReport, Run, RunStatus
@@ -8,7 +10,7 @@ from app.models import AnalysisReport, Run, RunStatus
 router = APIRouter(prefix="/runs", tags=["analysis"])
 
 
-class AnalysisRead:
+class AnalysisRead(BaseModel):
     id: UUID
     run_id: UUID
     predicted_engagement: float
@@ -19,10 +21,11 @@ class AnalysisRead:
     top_negative_themes: list[str]
     top_objections: list[str]
     recommended_rewrite: str | None
+    created_at: datetime
 
 
-@router.get("/{run_id}/analysis")
-def get_analysis(run_id: UUID, session: SessionDep):
+@router.get("/{run_id}/analysis", response_model=AnalysisRead)
+def get_analysis(run_id: UUID, session: SessionDep) -> AnalysisReport:
     run = session.get(Run, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")

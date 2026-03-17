@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -42,3 +43,61 @@ class RunRead(BaseModel):
 class RunList(BaseModel):
     runs: list[RunRead]
     total: int
+
+
+class AgentExport(BaseModel):
+    id: UUID
+    handle: str
+    display_name: str
+    persona_name: str
+    persona_description: str
+    stance_bias: str
+    verbosity_bias: str
+    skepticism_bias: str
+    created_at: datetime
+
+
+class PostExport(BaseModel):
+    id: UUID
+    author_agent_id: UUID
+    author_handle: str
+    parent_post_id: UUID | None
+    root_post_id: UUID
+    round_number: int
+    content: str
+    stance: str
+    like_count: int
+    reply_count: int
+    created_at: datetime
+
+
+class InteractionExport(BaseModel):
+    id: UUID
+    agent_id: UUID
+    agent_handle: str
+    interaction_type: str
+    target_post_id: UUID | None
+    target_agent_id: UUID | None
+    round_number: int
+    created_at: datetime
+
+
+class AnalysisReportExport(BaseModel):
+    predicted_engagement: float
+    predicted_shareability: float
+    predicted_conversion_signal: float
+    predicted_trust: float
+    top_positive_themes: list[str]
+    top_negative_themes: list[str]
+    top_objections: list[str]
+    recommended_rewrite: str | None
+    created_at: datetime
+
+
+class RunExport(BaseModel):
+    run: RunRead
+    seed: dict[str, Any]
+    agents: list[AgentExport]
+    posts: list[PostExport]
+    interactions: list[InteractionExport]
+    analysis_report: AnalysisReportExport | None = None
