@@ -210,6 +210,15 @@
   background: var(--error);
 }
 
+.status-cancelled {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.status-cancelled::before {
+  background: var(--text-secondary);
+}
+
 /* Stat Card */
 .stat-card {
   background: var(--bg-surface);
@@ -258,6 +267,10 @@
   max-width: 800px;
   margin: 0 auto;
   padding: var(--space-12) var(--space-6);
+}
+
+.page-container-wide {
+  max-width: 1120px;
 }
 
 .page-header {

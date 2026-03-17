@@ -418,6 +418,8 @@ All agent decisions must come back as strict JSON Schema via OpenRouter structur
 }
 ```
 
+Unused optional fields must be `null` for the chosen action.
+
 **Validation rules:**
 
 - `post` requires content

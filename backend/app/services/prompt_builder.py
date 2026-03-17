@@ -1,5 +1,7 @@
 from pathlib import Path
+
 from app.models import Agent, RunSeed
+from app.services.personas import voice_profile_for_persona
 
 
 def load_prompt_template(name: str) -> str:
@@ -13,10 +15,11 @@ def build_agent_action_prompt(
     round_number: int,
     total_rounds: int,
     recent_posts: list[dict[str, str]],
-    recent_actions: list[dict],
+    recent_actions: list[dict[str, str | int | None]],
     follows: list[str],
 ) -> list[dict[str, str]]:
     template = load_prompt_template("agent_decide_action.md")
+    voice_profile = voice_profile_for_persona(agent.persona_name)
 
     recent_feed = (
         "\n".join(
@@ -35,7 +38,7 @@ def build_agent_action_prompt(
     )
 
     recent_actions_str = (
-        "\n".join(f"- Round {a['round']}: {a['action']}" for a in recent_actions[-10:])
+        "\n".join(_format_recent_action(a) for a in recent_actions[-10:])
         or "No recent actions."
     )
 
@@ -55,6 +58,14 @@ def build_agent_action_prompt(
     prompt = prompt.replace("{{stance_bias}}", agent.stance_bias)
     prompt = prompt.replace("{{verbosity_bias}}", agent.verbosity_bias)
     prompt = prompt.replace("{{skepticism_bias}}", agent.skepticism_bias)
+    prompt = prompt.replace("{{sentence_length}}", voice_profile["sentence_length"])
+    prompt = prompt.replace("{{directness}}", voice_profile["directness"])
+    prompt = prompt.replace(
+        "{{emotional_intensity}}", voice_profile["emotional_intensity"]
+    )
+    prompt = prompt.replace("{{jargon_use}}", voice_profile["jargon_use"])
+    prompt = prompt.replace("{{ask_vs_assert}}", voice_profile["ask_vs_assert"])
+    prompt = prompt.replace("{{social_confidence}}", voice_profile["social_confidence"])
     prompt = prompt.replace("{{round_number}}", str(round_number))
     prompt = prompt.replace("{{total_rounds}}", str(total_rounds))
     prompt = prompt.replace("{{follows}}", follows_str)
@@ -70,6 +81,27 @@ def build_agent_action_prompt(
         },
         {"role": "user", "content": prompt},
     ]
+
+
+def _format_recent_action(action: dict[str, str | int | None]) -> str:
+    line = f"- Round {action['round']}: {action['action']}"
+    progress_type = action.get("progress_type")
+    if progress_type:
+        line = f"{line} [{progress_type}]"
+
+    content_excerpt = action.get("content_excerpt")
+    if content_excerpt:
+        line = f'{line} "{content_excerpt}"'
+
+    opening_phrase = action.get("opening_phrase")
+    if opening_phrase:
+        line = f"{line} (opening: {opening_phrase})"
+
+    note = action.get("note")
+    if note and note != action.get("action"):
+        line = f"{line} | {note}"
+
+    return line
 
 
 def build_analysis_prompt(
@@ -99,9 +131,7 @@ def build_analysis_prompt(
 
     key_posts_str = (
         "\n".join(
-            (
-                f"- {p['author_handle']} ({p['segment']}): {p['content'][:300]}..."
-            )
+            (f"- {p['author_handle']} ({p['segment']}): {p['content'][:300]}...")
             if len(p["content"]) > 300
             else f"- {p['author_handle']} ({p['segment']}): {p['content']}"
             for p in key_posts[:20]

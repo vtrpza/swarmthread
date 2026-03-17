@@ -15,6 +15,13 @@ class RunStatus(enum.StrEnum):
     cancelled = "cancelled"
 
 
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class InteractionType(enum.StrEnum):
     like = "like"
     follow = "follow"
@@ -26,6 +33,16 @@ class ActionType(enum.StrEnum):
     like = "like"
     follow = "follow"
     idle = "idle"
+
+
+class ProgressType(enum.StrEnum):
+    new_claim = "new_claim"
+    new_question = "new_question"
+    counterpoint = "counterpoint"
+    evidence_request = "evidence_request"
+    synthesis = "synthesis"
+    agreement = "agreement"
+    clarification = "clarification"
 
 
 class Stance(enum.StrEnum):
@@ -54,6 +71,8 @@ class Run(SQLModel, table=True):
     model_name: str = Field(default="qwen/qwen-plus")
     max_total_cost_usd: float = Field(default=10.0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", index=True)
+    encrypted_api_key: str | None = Field(default=None)
 
 
 class RunSeed(SQLModel, table=True):

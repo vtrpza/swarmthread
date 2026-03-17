@@ -1,12 +1,12 @@
-import { useQuery } from "@tanstack/react-query"
-import { getRun, cancelRun } from "../api/runs"
-import type { RunStatus } from "../types"
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { cancelRun, getRun } from '../api/runs'
+import type { RunStatus } from '../types'
 
-const POLLING_STATUSES: RunStatus[] = ["queued", "running"]
+const POLLING_STATUSES: RunStatus[] = ['queued', 'running']
 
 export function useRun(runId: string) {
   return useQuery({
-    queryKey: ["run", runId],
+    queryKey: ['run', runId],
     queryFn: () => getRun(runId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
@@ -19,9 +19,13 @@ export function useRun(runId: string) {
 }
 
 export function useCancelRun(runId: string) {
-  return useQuery({
-    queryKey: ["cancel-run", runId],
-    queryFn: () => cancelRun(runId),
-    enabled: false,
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => cancelRun(runId),
+    onSuccess: (run) => {
+      queryClient.setQueryData(['run', runId], run)
+      void queryClient.invalidateQueries({ queryKey: ['run', runId] })
+    },
   })
 }

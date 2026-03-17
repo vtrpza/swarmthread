@@ -1,51 +1,88 @@
-import { useQuery } from "@tanstack/react-query"
-import { Link, useParams } from "react-router"
-import { getAnalysis } from "../api/runs"
-import type { SegmentReaction } from "../types"
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Link, useParams } from 'react-router'
+import { getAnalysis } from '../api/runs'
+import { formatDateTime, formatPercent } from '../utils/formatters'
+import type { SegmentReaction } from '../types'
+import './AnalysisPage.css'
 
 const REACTION_STYLES: Record<
-  SegmentReaction["reaction"],
+  SegmentReaction['reaction'],
   { background: string; text: string; border: string }
 > = {
   positive: {
-    background: "var(--success-subtle)",
-    text: "var(--success)",
-    border: "var(--success-glow)",
+    background: 'var(--success-subtle)',
+    text: 'var(--success)',
+    border: 'var(--success-glow)',
   },
   mixed: {
-    background: "var(--warning-subtle)",
-    text: "var(--warning)",
-    border: "var(--warning-glow)",
+    background: 'var(--warning-subtle)',
+    text: 'var(--warning)',
+    border: 'var(--warning-glow)',
   },
   negative: {
-    background: "var(--error-subtle)",
-    text: "var(--error)",
-    border: "var(--error-glow)",
+    background: 'var(--error-subtle)',
+    text: 'var(--error)',
+    border: 'var(--error-glow)',
   },
 }
 
 const RECOMMENDATION_COPY = {
-  ship: "Strong enough to ship with only minor edits.",
-  revise: "Needs revisions before it is safe to publish.",
-  avoid: "The current version is likely to create more resistance than momentum.",
+  ship: 'Strong enough to ship with only minor edits.',
+  revise: 'Needs revisions before it is safe to publish.',
+  avoid: 'The current version is likely to create more resistance than momentum.',
+}
+
+const METRIC_COPY = {
+  predicted_engagement: 'How strongly the audience is expected to react.',
+  predicted_shareability: 'How likely the message is to travel across the network.',
+  predicted_conversion_signal: 'How much intent or action the message is likely to create.',
+  predicted_trust: 'How much the message is expected to strengthen credibility.',
 }
 
 function MetricCard({
   label,
+  description,
   value,
 }: {
   label: string
+  description: string
   value: number
 }) {
   return (
-    <div className="metric-card">
-      <div className="metric-bar-container">
-        <div className="metric-bar" style={{ width: `${value * 100}%` }} />
+    <article className="analysis-metric-card">
+      <div className="analysis-metric-topline">
+        <span className="analysis-metric-label">{label}</span>
+        <strong className="analysis-metric-value">{formatPercent(value)}</strong>
       </div>
-      <div className="metric-info">
-        <span className="metric-value">{(value * 100).toFixed(0)}%</span>
-        <span className="metric-label">{label}</span>
+      <div className="analysis-metric-bar-track">
+        <div className="analysis-metric-bar" style={{ width: formatPercent(value) }} />
       </div>
+      <p className="analysis-metric-description">{description}</p>
+    </article>
+  )
+}
+
+function TagList({
+  items,
+  variant,
+  emptyCopy,
+}: {
+  items: string[]
+  variant: 'positive' | 'negative' | 'warning' | 'neutral'
+  emptyCopy: string
+}) {
+  if (items.length === 0) {
+    return <p className="analysis-empty-copy">{emptyCopy}</p>
+  }
+
+  return (
+    <div className="analysis-tag-list">
+      {items.map((item) => (
+        <span key={item} className={`analysis-tag analysis-tag-${variant}`}>
+          {item}
+        </span>
+      ))}
     </div>
   )
 }
@@ -54,16 +91,17 @@ function SegmentCard({ segment }: { segment: SegmentReaction }) {
   const style = REACTION_STYLES[segment.reaction]
 
   return (
-    <article className="segment-card">
-      <div className="segment-card-header">
+    <article className="analysis-segment-card">
+      <div className="analysis-segment-header">
         <div>
-          <h3 className="segment-title">{segment.segment}</h3>
-          <p className="segment-share">
-            {(segment.simulated_share * 100).toFixed(0)}% of simulated audience
+          <span className="analysis-segment-eyebrow">Audience segment</span>
+          <h3 className="analysis-segment-title">{segment.segment}</h3>
+          <p className="analysis-segment-share">
+            {formatPercent(segment.simulated_share)} of the simulated audience
           </p>
         </div>
         <span
-          className="segment-reaction"
+          className="analysis-segment-reaction"
           style={{
             background: style.background,
             color: style.text,
@@ -74,39 +112,39 @@ function SegmentCard({ segment }: { segment: SegmentReaction }) {
         </span>
       </div>
 
-      <p className="segment-summary">{segment.summary}</p>
+      <p className="analysis-segment-summary">{segment.summary}</p>
 
-      <div className="segment-list-block">
+      <div className="analysis-segment-block">
         <h4>What resonated</h4>
-        <div className="theme-tags">
-          {segment.key_resonators.map((item) => (
-            <span key={item} className="theme-tag theme-positive">
-              {item}
-            </span>
-          ))}
-        </div>
+        <TagList
+          items={segment.key_resonators}
+          variant="positive"
+          emptyCopy="No clear resonators surfaced for this segment."
+        />
       </div>
 
-      <div className="segment-list-block">
+      <div className="analysis-segment-block">
         <h4>Key objections</h4>
-        <div className="theme-tags">
-          {segment.key_objections.map((item) => (
-            <span key={item} className="theme-tag theme-negative">
-              {item}
-            </span>
-          ))}
-        </div>
+        <TagList
+          items={segment.key_objections}
+          variant="negative"
+          emptyCopy="No consistent objections surfaced for this segment."
+        />
       </div>
 
-      <div className="segment-list-block">
+      <div className="analysis-segment-block">
         <h4>Representative simulated posts</h4>
-        <div className="quote-list">
-          {segment.representative_posts.map((post) => (
-            <blockquote key={post} className="quote-card">
-              {post}
-            </blockquote>
-          ))}
-        </div>
+        {segment.representative_posts.length === 0 ? (
+          <p className="analysis-empty-copy">No representative posts were captured.</p>
+        ) : (
+          <div className="analysis-quote-list">
+            {segment.representative_posts.map((post) => (
+              <blockquote key={post} className="analysis-quote-card">
+                {post}
+              </blockquote>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   )
@@ -114,14 +152,25 @@ function SegmentCard({ segment }: { segment: SegmentReaction }) {
 
 function AnalysisPage() {
   const { runId } = useParams()
+  const resolvedRunId = runId ?? ''
   const { data: analysis, isLoading, error } = useQuery({
-    queryKey: ["analysis", runId],
-    queryFn: () => getAnalysis(runId!),
+    queryKey: ['analysis', resolvedRunId],
+    queryFn: () => getAnalysis(resolvedRunId),
   })
+
+  const sortedSegments = useMemo(() => {
+    if (!analysis) {
+      return []
+    }
+
+    return [...analysis.segment_reactions].sort((left, right) => {
+      return right.simulated_share - left.simulated_share
+    })
+  }, [analysis])
 
   if (isLoading) {
     return (
-      <div className="page-container">
+      <div className="page-container page-container-wide analysis-page">
         <div className="loading-container">
           <div className="loading-spinner" />
         </div>
@@ -131,350 +180,194 @@ function AnalysisPage() {
 
   if (error || !analysis) {
     return (
-      <div className="page-container">
-        <Link to={`/runs/${runId}`} className="back-link">
+      <div className="page-container analysis-page">
+        <Link to={`/runs/${resolvedRunId}`} className="back-link">
           Back to Run
         </Link>
         <div className="error-state">
           <div className="error-state-title">Failed to load analysis</div>
-          <div>{error instanceof Error ? error.message : "Unknown error"}</div>
+          <div>{error instanceof Error ? error.message : 'Unknown error'}</div>
         </div>
       </div>
     )
   }
 
+  const sectionLinks = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'signals', label: 'Signals' },
+    { id: 'segments', label: 'Segments' },
+    { id: 'themes', label: 'Themes' },
+    ...(analysis.recommended_rewrite ? [{ id: 'rewrite', label: 'Rewrite' }] : []),
+  ]
+
   return (
-    <div className="page-container">
+    <div className="page-container page-container-wide analysis-page">
       <div className="animate-reveal">
-        <Link to={`/runs/${runId}`} className="back-link">
+        <Link to={`/runs/${resolvedRunId}`} className="back-link">
           Back to Run
         </Link>
         <h1 className="page-title">Audience Reaction Analysis</h1>
-        <p className="page-subtitle">
-          Directional signal based on a simulated social audience, not a guaranteed forecast.
+        <p className="page-subtitle analysis-page-subtitle">
+          Directional signal from a simulated social audience, intended to sharpen
+          judgement rather than replace it.
         </p>
       </div>
 
-      <section className="recommendation-card animate-scale">
-        <div>
-          <span className={`recommendation-pill recommendation-${analysis.overall_recommendation}`}>
+      <nav className="analysis-nav animate-fade" aria-label="Analysis sections">
+        {sectionLinks.map((link) => (
+          <a key={link.id} href={`#${link.id}`} className="analysis-nav-link">
+            {link.label}
+          </a>
+        ))}
+      </nav>
+
+      <section id="overview" className="analysis-hero card card-elevated animate-scale">
+        <div className="analysis-hero-copy">
+          <span
+            className={`analysis-recommendation-pill analysis-recommendation-${analysis.overall_recommendation}`}
+          >
             {analysis.overall_recommendation}
           </span>
-          <h2>{RECOMMENDATION_COPY[analysis.overall_recommendation]}</h2>
-          <p className="confidence-copy">
-            Confidence: <strong>{analysis.confidence_label}</strong>
+          <h2 className="analysis-hero-title">
+            {RECOMMENDATION_COPY[analysis.overall_recommendation]}
+          </h2>
+          <p className="analysis-hero-subtitle">
+            Confidence: <strong>{analysis.confidence_label}</strong>. Generated{' '}
+            {formatDateTime(analysis.created_at)}.
           </p>
         </div>
 
-        <div className="recommendation-meta">
-          <div>
-            <span className="meta-label">Best fit segments</span>
-            <div className="theme-tags">
-              {analysis.best_fit_segments.map((segment) => (
-                <span key={segment} className="theme-tag theme-positive">
-                  {segment}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div>
-            <span className="meta-label">Risky segments</span>
-            <div className="theme-tags">
-              {analysis.risky_segments.map((segment) => (
-                <span key={segment} className="theme-tag theme-negative">
-                  {segment}
-                </span>
-              ))}
-            </div>
-          </div>
+        <div className="analysis-hero-side">
+          <article className="analysis-side-card">
+            <span className="analysis-side-label">Best fit segments</span>
+            <TagList
+              items={analysis.best_fit_segments}
+              variant="positive"
+              emptyCopy="No clear best-fit segment surfaced."
+            />
+          </article>
+          <article className="analysis-side-card">
+            <span className="analysis-side-label">Risky segments</span>
+            <TagList
+              items={analysis.risky_segments}
+              variant="negative"
+              emptyCopy="No standout risk cluster surfaced."
+            />
+          </article>
         </div>
       </section>
 
-      <section className="segment-grid">
-        {analysis.segment_reactions.map((segment) => (
-          <SegmentCard key={segment.segment} segment={segment} />
-        ))}
-      </section>
+      <section id="signals" className="analysis-section card">
+        <div className="analysis-section-header">
+          <div>
+            <span className="analysis-section-eyebrow">Signal</span>
+            <h2 className="analysis-section-title">Directional Metrics</h2>
+          </div>
+          <p className="analysis-section-copy">
+            These scores summarize how the message performed across the simulated
+            audience.
+          </p>
+        </div>
 
-      <section className="analysis-section">
-        <h2 className="section-title">Directional Metrics</h2>
-        <div className="metrics-grid">
-          <MetricCard label="Engagement" value={analysis.predicted_engagement} />
-          <MetricCard label="Shareability" value={analysis.predicted_shareability} />
-          <MetricCard label="Conversion" value={analysis.predicted_conversion_signal} />
-          <MetricCard label="Trust" value={analysis.predicted_trust} />
+        <div className="analysis-metric-grid">
+          <MetricCard
+            label="Engagement"
+            description={METRIC_COPY.predicted_engagement}
+            value={analysis.predicted_engagement}
+          />
+          <MetricCard
+            label="Shareability"
+            description={METRIC_COPY.predicted_shareability}
+            value={analysis.predicted_shareability}
+          />
+          <MetricCard
+            label="Conversion"
+            description={METRIC_COPY.predicted_conversion_signal}
+            value={analysis.predicted_conversion_signal}
+          />
+          <MetricCard
+            label="Trust"
+            description={METRIC_COPY.predicted_trust}
+            value={analysis.predicted_trust}
+          />
         </div>
       </section>
 
-      <section className="analysis-section">
-        <h2 className="section-title">Overall Themes</h2>
-        <div className="theme-split">
+      <section id="segments" className="analysis-section card">
+        <div className="analysis-section-header">
           <div>
-            <h3 className="mini-title">Positive themes</h3>
-            <div className="theme-tags">
-              {analysis.top_positive_themes.map((theme) => (
-                <span key={theme} className="theme-tag theme-positive">
-                  {theme}
-                </span>
-              ))}
-            </div>
+            <span className="analysis-section-eyebrow">Audience</span>
+            <h2 className="analysis-section-title">Segment Reactions</h2>
           </div>
+          <p className="analysis-section-copy">
+            Segments are ordered by simulated audience share so the largest reactions
+            stay first.
+          </p>
+        </div>
+
+        <div className="analysis-segment-grid">
+          {sortedSegments.map((segment) => (
+            <SegmentCard key={segment.segment} segment={segment} />
+          ))}
+        </div>
+      </section>
+
+      <section id="themes" className="analysis-section card">
+        <div className="analysis-section-header">
           <div>
-            <h3 className="mini-title">Negative themes</h3>
-            <div className="theme-tags">
-              {analysis.top_negative_themes.map((theme) => (
-                <span key={theme} className="theme-tag theme-negative">
-                  {theme}
-                </span>
-              ))}
-            </div>
+            <span className="analysis-section-eyebrow">Themes</span>
+            <h2 className="analysis-section-title">Overall Themes</h2>
           </div>
-          <div>
-            <h3 className="mini-title">Top objections</h3>
-            <div className="theme-tags">
-              {analysis.top_objections.map((theme) => (
-                <span key={theme} className="theme-tag theme-warning">
-                  {theme}
-                </span>
-              ))}
-            </div>
-          </div>
+          <p className="analysis-section-copy">
+            Cross-segment patterns that explain why the audience moved toward or away
+            from the message.
+          </p>
+        </div>
+
+        <div className="analysis-theme-grid">
+          <article className="analysis-theme-card">
+            <h3 className="analysis-theme-title">Positive themes</h3>
+            <TagList
+              items={analysis.top_positive_themes}
+              variant="positive"
+              emptyCopy="No recurring positive theme surfaced."
+            />
+          </article>
+          <article className="analysis-theme-card">
+            <h3 className="analysis-theme-title">Negative themes</h3>
+            <TagList
+              items={analysis.top_negative_themes}
+              variant="negative"
+              emptyCopy="No recurring negative theme surfaced."
+            />
+          </article>
+          <article className="analysis-theme-card">
+            <h3 className="analysis-theme-title">Top objections</h3>
+            <TagList
+              items={analysis.top_objections}
+              variant="warning"
+              emptyCopy="No repeated objection cluster surfaced."
+            />
+          </article>
         </div>
       </section>
 
       {analysis.recommended_rewrite && (
-        <section className="analysis-section">
-          <h2 className="section-title">Recommended Rewrite</h2>
-          <div className="rewrite-card">{analysis.recommended_rewrite}</div>
+        <section id="rewrite" className="analysis-section card analysis-rewrite-section">
+          <div className="analysis-section-header">
+            <div>
+              <span className="analysis-section-eyebrow">Rewrite</span>
+              <h2 className="analysis-section-title">Recommended Rewrite</h2>
+            </div>
+            <p className="analysis-section-copy">
+              A suggested next draft based on the strongest recurring signals in the
+              simulation.
+            </p>
+          </div>
+
+          <div className="analysis-rewrite-card">{analysis.recommended_rewrite}</div>
         </section>
       )}
-
-      <style>{`
-        .page-subtitle {
-          color: var(--text-secondary);
-          margin-top: var(--space-2);
-          max-width: 52rem;
-        }
-
-        .recommendation-card,
-        .analysis-section,
-        .segment-card {
-          background: var(--bg-surface);
-          border: 1px solid var(--border-default);
-          border-radius: var(--radius-xl);
-          padding: var(--space-6);
-          margin-top: var(--space-6);
-        }
-
-        .recommendation-card {
-          display: grid;
-          grid-template-columns: 1.2fr 1fr;
-          gap: var(--space-6);
-        }
-
-        .recommendation-pill {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0.25rem 0.75rem;
-          border-radius: 999px;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          font-size: var(--text-xs);
-          font-weight: 700;
-          margin-bottom: var(--space-3);
-        }
-
-        .recommendation-ship {
-          background: var(--success-subtle);
-          color: var(--success);
-        }
-
-        .recommendation-revise {
-          background: var(--warning-subtle);
-          color: var(--warning);
-        }
-
-        .recommendation-avoid {
-          background: var(--error-subtle);
-          color: var(--error);
-        }
-
-        .confidence-copy {
-          margin-top: var(--space-3);
-          color: var(--text-secondary);
-        }
-
-        .recommendation-meta {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-5);
-        }
-
-        .meta-label,
-        .mini-title {
-          display: block;
-          font-size: var(--text-sm);
-          font-weight: 600;
-          margin-bottom: var(--space-2);
-          color: var(--text-secondary);
-        }
-
-        .segment-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-          gap: var(--space-5);
-          margin-top: var(--space-6);
-        }
-
-        .segment-card-header {
-          display: flex;
-          justify-content: space-between;
-          gap: var(--space-4);
-          align-items: flex-start;
-        }
-
-        .segment-title {
-          margin: 0;
-        }
-
-        .segment-share {
-          margin-top: var(--space-1);
-          color: var(--text-secondary);
-          font-size: var(--text-sm);
-        }
-
-        .segment-reaction {
-          border: 1px solid transparent;
-          border-radius: 999px;
-          padding: 0.3rem 0.7rem;
-          text-transform: uppercase;
-          font-size: var(--text-xs);
-          font-weight: 700;
-          letter-spacing: 0.08em;
-        }
-
-        .segment-summary {
-          color: var(--text-secondary);
-          margin-top: var(--space-4);
-          line-height: var(--leading-relaxed);
-        }
-
-        .segment-list-block {
-          margin-top: var(--space-5);
-        }
-
-        .segment-list-block h4 {
-          margin-bottom: var(--space-2);
-        }
-
-        .quote-list {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-2);
-        }
-
-        .quote-card {
-          margin: 0;
-          padding: var(--space-3);
-          border-left: 3px solid var(--primary);
-          background: var(--bg-subtle);
-          color: var(--text-secondary);
-        }
-
-        .metrics-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: var(--space-4);
-        }
-
-        .metric-card {
-          padding: var(--space-4);
-          border-radius: var(--radius-lg);
-          border: 1px solid var(--border-subtle);
-          background: var(--bg-subtle);
-        }
-
-        .metric-bar-container {
-          height: 6px;
-          background: var(--border-subtle);
-          border-radius: 999px;
-          overflow: hidden;
-          margin-bottom: var(--space-4);
-        }
-
-        .metric-bar {
-          height: 100%;
-          background: var(--primary);
-        }
-
-        .metric-info {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-1);
-        }
-
-        .metric-value {
-          font-family: var(--font-mono);
-          font-size: var(--text-2xl);
-          font-weight: 600;
-        }
-
-        .metric-label {
-          color: var(--text-secondary);
-          font-size: var(--text-sm);
-        }
-
-        .theme-split {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: var(--space-5);
-        }
-
-        .theme-tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: var(--space-2);
-        }
-
-        .theme-tag {
-          padding: var(--space-2) var(--space-3);
-          border-radius: var(--radius-md);
-          font-size: var(--text-sm);
-          font-weight: 500;
-        }
-
-        .theme-positive {
-          background: var(--success-subtle);
-          color: var(--success);
-        }
-
-        .theme-negative {
-          background: var(--error-subtle);
-          color: var(--error);
-        }
-
-        .theme-warning {
-          background: var(--warning-subtle);
-          color: var(--warning);
-        }
-
-        .rewrite-card {
-          background: var(--primary-subtle);
-          border: 1px solid var(--primary-glow);
-          border-radius: var(--radius-lg);
-          padding: var(--space-5);
-          line-height: var(--leading-relaxed);
-        }
-
-        @media (max-width: 900px) {
-          .recommendation-card,
-          .theme-split,
-          .metrics-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
     </div>
   )
 }

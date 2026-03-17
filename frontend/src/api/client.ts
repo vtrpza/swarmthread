@@ -10,6 +10,20 @@ export class ApiError extends Error {
   }
 }
 
+function getUserHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  const userId = localStorage.getItem('swarmthread:user-id')
+  const apiKey = localStorage.getItem('swarmthread:api-key')
+  const headers: Record<string, string> = {}
+  if (userId) {
+    headers['X-User-ID'] = userId
+  }
+  if (apiKey) {
+    headers['X-OpenRouter-Key'] = apiKey
+  }
+  return headers
+}
+
 export async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -19,6 +33,7 @@ export async function fetchApi<T>(
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
+      ...getUserHeaders(),
       ...options.headers,
     },
     ...options,

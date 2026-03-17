@@ -1,24 +1,42 @@
-import { useQuery } from "@tanstack/react-query"
-import { useParams, Link } from "react-router"
-import { getAgent } from "../api/runs"
+import { useQuery } from '@tanstack/react-query'
+import { Link, useParams } from 'react-router'
+import { getAgent } from '../api/runs'
+import { formatDateTime, formatHandle, pluralize } from '../utils/formatters'
+import './AgentPage.css'
 
-function formatHandle(handle: string): string {
-  return handle.startsWith("@") ? handle : `@${handle}`
+function getAvatarLabel(handle: string): string {
+  const cleaned = handle.replace(/[_\d]+/g, ' ').trim()
+  const parts = cleaned.split(/\s+/).filter(Boolean)
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  }
+
+  return cleaned.slice(0, 2).toUpperCase()
 }
 
 function AgentPage() {
   const { runId, agentId } = useParams()
+  const resolvedRunId = runId ?? ''
+  const resolvedAgentId = agentId ?? ''
+
   const { data: agent, isLoading, error } = useQuery({
-    queryKey: ["agent", runId, agentId],
-    queryFn: () => getAgent(runId!, agentId!),
+    queryKey: ['agent', resolvedRunId, resolvedAgentId],
+    queryFn: () => getAgent(resolvedRunId, resolvedAgentId),
   })
 
   return (
-    <div className="page-container">
+    <div className="page-container page-container-wide agent-page">
       <div className="animate-reveal">
-        <Link to={`/runs/${runId}/feed`} className="back-link">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <Link to={`/runs/${resolvedRunId}/feed`} className="back-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M10 12L6 8l4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
           Back to Feed
         </Link>
@@ -33,234 +51,167 @@ function AgentPage() {
       {error && (
         <div className="error-state">
           <div className="error-state-title">Failed to load agent</div>
-          <div>{error instanceof Error ? error.message : "Unknown error"}</div>
+          <div>{error instanceof Error ? error.message : 'Unknown error'}</div>
         </div>
       )}
 
       {agent && (
-        <div className="agent-profile animate-reveal">
-          <div className="profile-header">
-            <div className="profile-avatar">
-              {agent.profile.handle.charAt(0).toUpperCase()}
-            </div>
-            <div className="profile-info">
-              <h1 className="profile-handle">{formatHandle(agent.profile.handle)}</h1>
-              <p className="profile-name">{agent.profile.display_name}</p>
-            </div>
-          </div>
-
-          <div className="stat-grid stagger-item" style={{ animationDelay: "0.1s" }}>
-            <div className="stat-card">
-              <div className="stat-value">{agent.profile.post_count}</div>
-              <div className="stat-label">Posts</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{agent.profile.reply_count}</div>
-              <div className="stat-label">Replies</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{agent.profile.like_count}</div>
-              <div className="stat-label">Likes</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{agent.profile.follow_count}</div>
-              <div className="stat-label">Follows</div>
-            </div>
-          </div>
-
-          <div className="profile-section" style={{ animationDelay: "0.2s" }}>
-            <h3 className="section-title">Persona</h3>
-            <div className="card persona-card">
-              <div className="persona-name">{agent.profile.persona_name}</div>
-              <p className="persona-desc">{agent.profile.persona_description}</p>
-            </div>
-          </div>
-
-          <div className="profile-section" style={{ animationDelay: "0.3s" }}>
-            <h3 className="section-title">Bias</h3>
-            <div className="bias-tag">
-              <span className="bias-label">Stance</span>
-              <span className="bias-value">{agent.profile.stance_bias}</span>
-            </div>
-          </div>
-
-          <div className="profile-section" style={{ animationDelay: "0.4s" }}>
-            <h3 className="section-title">Recent Posts</h3>
-            {agent.posts.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-title">No posts yet</div>
+        <>
+          <section className="agent-hero card card-elevated animate-scale">
+            <div className="agent-identity">
+              <div className="agent-avatar">{getAvatarLabel(agent.profile.handle)}</div>
+              <div className="agent-identity-copy">
+                <span className="agent-eyebrow">Simulated profile</span>
+                <h1 className="page-title agent-handle">
+                  {formatHandle(agent.profile.handle)}
+                </h1>
+                <p className="agent-name">{agent.profile.display_name}</p>
+                <div className="agent-badges">
+                  <span className="agent-badge agent-badge-primary">
+                    {agent.profile.persona_name}
+                  </span>
+                  <span className="agent-badge agent-badge-neutral">
+                    {agent.profile.stance_bias}
+                  </span>
+                  <span className="agent-badge agent-badge-neutral">
+                    Created {formatDateTime(agent.profile.created_at)}
+                  </span>
+                </div>
               </div>
-            ) : (
-              <div className="posts-list">
-                {agent.posts.slice(0, 10).map((post, index) => (
-                  <div 
-                    key={post.post_id} 
-                    className="post-card"
-                    style={{ animationDelay: `${0.05 * (index + 1)}s` }}
-                  >
-                    <p className="post-content">{post.content}</p>
-                    <div className="post-meta">
-                      <span className="post-stat">
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                          <path d="M8 14s-5.5-3.5-5.5-7A3.5 3.5 0 018 4a3.5 3.5 0 015.5 3c0 3.5-5.5 7-5.5 7z" stroke="currentColor" strokeWidth="1.5"/>
-                        </svg>
-                        {post.like_count}
-                      </span>
-                      <span className="post-stat">
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                          <path d="M14 9H4a1 1 0 01-1-1V3l6-2 6 2v5a1 1 0 01-1 1z" stroke="currentColor" strokeWidth="1.5"/>
-                        </svg>
-                        {post.reply_count}
-                      </span>
-                      <span className="post-round">Round {post.round_number}</span>
-                    </div>
+            </div>
+
+            <div className="agent-stat-grid">
+              <article className="agent-stat-card">
+                <span className="agent-stat-label">Posts</span>
+                <strong>{agent.profile.post_count}</strong>
+              </article>
+              <article className="agent-stat-card">
+                <span className="agent-stat-label">Replies</span>
+                <strong>{agent.profile.reply_count}</strong>
+              </article>
+              <article className="agent-stat-card">
+                <span className="agent-stat-label">Likes</span>
+                <strong>{agent.profile.like_count}</strong>
+              </article>
+              <article className="agent-stat-card">
+                <span className="agent-stat-label">Follows</span>
+                <strong>{agent.profile.follow_count}</strong>
+              </article>
+            </div>
+          </section>
+
+          <div className="agent-layout">
+            <section className="card agent-panel">
+              <div className="agent-panel-header">
+                <span className="agent-eyebrow">Persona</span>
+                <h2 className="agent-panel-title">Voice Profile</h2>
+              </div>
+              <p className="agent-panel-lead">{agent.profile.persona_name}</p>
+              <p className="agent-panel-copy">{agent.profile.persona_description}</p>
+            </section>
+
+            <section className="card agent-panel">
+              <div className="agent-panel-header">
+                <span className="agent-eyebrow">Bias</span>
+                <h2 className="agent-panel-title">Reaction Tendency</h2>
+              </div>
+              <p className="agent-panel-copy">
+                This agent tends to respond from a{' '}
+                <strong>{agent.profile.stance_bias}</strong> perspective when reacting to
+                campaign messaging.
+              </p>
+            </section>
+
+            <section className="card agent-activity">
+              <div className="agent-panel-header">
+                <span className="agent-eyebrow">Activity</span>
+                <h2 className="agent-panel-title">Recent Posts</h2>
+              </div>
+              <p className="agent-activity-summary">
+                Showing the latest {Math.min(agent.posts.length, 10)} items from this
+                profile. {pluralize(agent.profile.reply_count, 'reply')} and{' '}
+                {pluralize(agent.profile.post_count, 'post')} produced in the run.
+              </p>
+
+              {agent.posts.length === 0 ? (
+                <div className="empty-state agent-empty-state">
+                  <div className="empty-state-title">No posts yet</div>
+                  <div className="empty-state-description">
+                    This agent did not publish during the simulated run.
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ) : (
+                <div className="agent-post-list">
+                  {agent.posts.slice(0, 10).map((post) => (
+                    <article key={post.post_id} className="agent-post-card">
+                      <div className="agent-post-topline">
+                        <div className="agent-post-meta">
+                          <span className="agent-post-round">Round {post.round_number}</span>
+                          <span className="agent-post-type">
+                            {post.parent_post_id ? 'Reply' : 'Original post'}
+                          </span>
+                          <span className="agent-post-stance">{post.stance}</span>
+                        </div>
+                        <span className="agent-post-time">
+                          {formatDateTime(post.created_at)}
+                        </span>
+                      </div>
+
+                      <p className="agent-post-content">{post.content}</p>
+
+                      <div className="agent-post-footer">
+                        <div className="agent-post-stats">
+                          <span className="agent-post-stat">
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d="M8 14s-5.5-3.5-5.5-7A3.5 3.5 0 018 4a3.5 3.5 0 015.5 3c0 3.5-5.5 7-5.5 7z"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                              />
+                            </svg>
+                            {post.like_count}
+                          </span>
+                          <span className="agent-post-stat">
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d="M14 9H4a1 1 0 01-1-1V3l6-2 6 2v5a1 1 0 01-1 1z"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                              />
+                            </svg>
+                            {pluralize(post.reply_count, 'reply')}
+                          </span>
+                        </div>
+
+                        {post.parent_post_id && (
+                          <Link
+                            to={`/runs/${resolvedRunId}/threads/${post.post_id}`}
+                            className="agent-post-thread-link"
+                          >
+                            View thread
+                          </Link>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
-        </div>
+        </>
       )}
-
-      <style>{`
-        .agent-profile {
-          margin-top: var(--space-8);
-        }
-
-        .profile-header {
-          display: flex;
-          align-items: center;
-          gap: var(--space-5);
-          margin-bottom: var(--space-8);
-        }
-
-        .profile-avatar {
-          width: 80px;
-          height: 80px;
-          border-radius: var(--radius-xl);
-          background: linear-gradient(135deg, var(--primary), var(--primary-active));
-          color: white;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: var(--text-3xl);
-          font-weight: 600;
-          font-family: var(--font-display);
-          box-shadow: var(--shadow-glow-sm);
-        }
-
-        .profile-info {
-          flex: 1;
-        }
-
-        .profile-handle {
-          font-family: var(--font-display);
-          font-size: var(--text-3xl);
-          font-weight: 400;
-          color: var(--text-primary);
-        }
-
-        .profile-name {
-          font-size: var(--text-base);
-          color: var(--text-secondary);
-          margin-top: var(--space-1);
-        }
-
-        .profile-section {
-          margin-bottom: var(--space-8);
-          opacity: 0;
-          animation: revealUp 0.5s ease-out forwards;
-        }
-
-        .persona-card {
-          background: var(--bg-surface);
-          border: 1px solid var(--border-default);
-        }
-
-        .persona-name {
-          font-weight: 600;
-          color: var(--text-primary);
-          margin-bottom: var(--space-2);
-          font-size: var(--text-lg);
-        }
-
-        .persona-desc {
-          color: var(--text-secondary);
-          font-size: var(--text-sm);
-          line-height: var(--leading-relaxed);
-          margin: 0;
-        }
-
-        .bias-tag {
-          display: inline-flex;
-          flex-direction: column;
-          gap: 4px;
-          padding: var(--space-3) var(--space-4);
-          background: var(--bg-surface);
-          border: 1px solid var(--border-default);
-          border-radius: var(--radius-lg);
-        }
-
-        .bias-label {
-          font-size: var(--text-xs);
-          color: var(--text-tertiary);
-          text-transform: uppercase;
-          letter-spacing: var(--tracking-wider);
-        }
-
-        .bias-value {
-          font-weight: 600;
-          color: var(--text-primary);
-        }
-
-        .posts-list {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-3);
-        }
-
-        .post-card {
-          background: var(--bg-surface);
-          border: 1px solid var(--border-default);
-          border-radius: var(--radius-lg);
-          padding: var(--space-4);
-          opacity: 0;
-          animation: revealUp 0.4s ease-out forwards;
-          transition: all var(--transition-fast);
-        }
-
-        .post-card:hover {
-          border-color: var(--border-hover);
-        }
-
-        .post-content {
-          color: var(--text-primary);
-          line-height: var(--leading-relaxed);
-          margin-bottom: var(--space-3);
-        }
-
-        .post-meta {
-          display: flex;
-          align-items: center;
-          gap: var(--space-4);
-        }
-
-        .post-stat {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: var(--text-xs);
-          color: var(--text-tertiary);
-          font-family: var(--font-mono);
-        }
-
-        .post-round {
-          font-size: var(--text-xs);
-          color: var(--text-muted);
-          margin-left: auto;
-          font-family: var(--font-mono);
-        }
-      `}</style>
     </div>
   )
 }

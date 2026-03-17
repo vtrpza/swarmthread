@@ -7,6 +7,8 @@ import FeedPage from "./pages/FeedPage"
 import ThreadPage from "./pages/ThreadPage"
 import AgentPage from "./pages/AgentPage"
 import AnalysisPage from "./pages/AnalysisPage"
+import SettingsPage from "./pages/SettingsPage"
+import HistoryPage from "./pages/HistoryPage"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +31,8 @@ function App() {
             <Route path="runs/:runId/threads/:postId" element={<ThreadPage />} />
             <Route path="runs/:runId/agents/:agentId" element={<AgentPage />} />
             <Route path="runs/:runId/analysis" element={<AnalysisPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="history" element={<HistoryPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

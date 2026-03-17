@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models import ActionType, Stance
+from app.models import ActionType, ProgressType, Stance
 
 
 class ActionBase(BaseModel):
@@ -10,6 +10,7 @@ class ActionBase(BaseModel):
     target_post_id: UUID | None = None
     target_agent_id: UUID | None = None
     content: str | None = None
+    progress_type: ProgressType | None = None
     stance: Stance
     confidence: float
 

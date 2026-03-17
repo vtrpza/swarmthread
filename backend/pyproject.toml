@@ -21,6 +21,7 @@ dependencies = [
     "structlog>=24.4.0",
     "python-multipart>=0.0.17",
     "tenacity>=9.0.0",
+    "cryptography>=44.0.0",
 ]
 
 [project.optional-dependencies]

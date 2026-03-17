@@ -1,6 +1,9 @@
-# Final Analysis Report Prompt
+You are analyzing the output of a synthetic social media simulation for SwarmThread.
 
-You are analyzing the results of a social media simulation to predict real-world marketing impact.
+Your task is to estimate likely real-world marketing impact based on simulated audience reactions.
+
+This is a directional decision-support analysis, not a guaranteed forecast.
+Be evidence-based, conservative, and explicit about mixed signals.
 
 ## Campaign Details
 
@@ -29,43 +32,78 @@ Total Follows: {{total_follows}}
 
 {{key_posts}}
 
-## Task
+## Scoring Rubric
 
-Analyze the simulation data as a directional audience-reaction estimate, not as a guaranteed forecast. Provide:
+Use conservative scoring based on the evidence provided.
 
-1. **Predicted Engagement** (0.0-1.0): How likely is this content to generate high engagement?
-2. **Predicted Shareability** (0.0-1.0): How likely are users to share/retweet this content?
-3. **Predicted Conversion Signal** (0.0-1.0): How likely is this content to drive the desired action?
-4. **Predicted Trust** (0.0-1.0): How likely is this content to build or maintain trust?
+- 0.00-0.20 = very weak signal
+- 0.21-0.40 = weak signal
+- 0.41-0.60 = mixed or uncertain signal
+- 0.61-0.80 = strong signal
+- 0.81-1.00 = very strong signal
 
-5. **Overall Recommendation**: One of `ship`, `revise`, or `avoid`
-6. **Confidence Label**: One of `low`, `medium`, or `high`
-7. **Best Fit Segments**: List 2-4 audience segments where the message is strongest
-8. **Risky Segments**: List 2-4 audience segments where the message is weakest
-9. **Segment Reactions**: For each major simulated segment, provide:
+Do not assign high scores unless the simulation shows repeated and consistent positive evidence.
+
+## Confidence Label Rules
+
+- low: sparse, noisy, or contradictory evidence
+- medium: some stable patterns, but still mixed or incomplete
+- high: repeated, consistent patterns across threads or segments
+
+## Analysis Instructions
+
+Analyze the simulation as a directional estimate of audience reaction.
+
+Provide:
+
+1. Predicted Engagement (0.0-1.0)
+2. Predicted Shareability (0.0-1.0)
+3. Predicted Conversion Signal (0.0-1.0)
+4. Predicted Trust (0.0-1.0)
+5. Overall Recommendation: `ship`, `revise`, or `avoid`
+6. Confidence Label: `low`, `medium`, or `high`
+7. Best Fit Segments: 2-4 segments where the message performs best
+8. Risky Segments: 2-4 segments where the message performs weakest
+9. Segment Reactions: for each major segment, provide:
    - segment
    - simulated_share (0.0-1.0)
    - reaction (`positive`, `mixed`, `negative`)
    - summary
    - key_resonators (2-4)
    - key_objections (2-4)
-   - representative_posts (1-3 short excerpts)
+   - representative_posts (1-3 grounded short excerpts or paraphrased excerpts)
+10. Top Positive Themes: 3-5
+11. Top Negative Themes: 3-5
+12. Top Objections: 3-5
+13. Recommended Rewrite: improve the original message while preserving goal, CTA, and tone
 
-10. **Top Positive Themes**: List 3-5 positive themes that resonated
-11. **Top Negative Themes**: List 3-5 negative reactions or concerns
-12. **Top Objections**: List 3-5 key objections raised
-13. **Recommended Rewrite**: Provide an improved version of the message that addresses key concerns while maintaining the brand voice.
+## Evidence Rules
+
+- Base conclusions only on the supplied simulation evidence.
+- Do not invent segment behaviors not supported by the input.
+- If evidence is mixed, reflect that in both scores and confidence.
+- Representative posts must be grounded in the provided simulation content.
+- Prefer cautious interpretation over inflated optimism.
+
+## Rewrite Rules
+
+The `recommended_rewrite` must:
+- preserve the campaign goal
+- preserve the CTA
+- maintain the intended tone
+- address the strongest objections
+- improve clarity and credibility
+- stay reasonably close to the original positioning
 
 ## Response Format
 
-Respond with a JSON object matching this schema:
+Return ONLY a JSON object matching this schema:
 
-```json
 {
-  "predicted_engagement": 0.0-1.0,
-  "predicted_shareability": 0.0-1.0,
-  "predicted_conversion_signal": 0.0-1.0,
-  "predicted_trust": 0.0-1.0,
+  "predicted_engagement": 0.0,
+  "predicted_shareability": 0.0,
+  "predicted_conversion_signal": 0.0,
+  "predicted_trust": 0.0,
   "overall_recommendation": "ship|revise|avoid",
   "confidence_label": "low|medium|high",
   "best_fit_segments": ["segment1", "segment2"],
@@ -74,16 +112,15 @@ Respond with a JSON object matching this schema:
     {
       "segment": "performance marketer",
       "simulated_share": 0.25,
-      "reaction": "mixed",
-      "summary": "Short explanation of how this segment reacted",
-      "key_resonators": ["point 1", "point 2"],
-      "key_objections": ["point 1", "point 2"],
-      "representative_posts": ["excerpt 1", "excerpt 2"]
+      "reaction": "positive|mixed|negative",
+      "summary": "string",
+      "key_resonators": ["string"],
+      "key_objections": ["string"],
+      "representative_posts": ["string"]
     }
   ],
-  "top_positive_themes": ["theme1", "theme2", ...],
-  "top_negative_themes": ["theme1", "theme2", ...],
-  "top_objections": ["objection1", "objection2", ...],
-  "recommended_rewrite": "Improved version of the message..."
+  "top_positive_themes": ["string"],
+  "top_negative_themes": ["string"],
+  "top_objections": ["string"],
+  "recommended_rewrite": "string"
 }
-```

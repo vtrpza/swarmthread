@@ -93,8 +93,7 @@ export default function HomePage() {
     }))
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const handleSubmit = async () => {
     if (!isFormValid) return
 
     const payload: RunCreate = {
@@ -265,7 +264,7 @@ export default function HomePage() {
           onStepClick={setCurrentStep}
         />
 
-        <form onSubmit={handleSubmit} className="home-page-form animate-scale">
+        <form onSubmit={(e) => e.preventDefault()} className="home-page-form animate-scale">
           <div className="form-section-wrapper">
             <div className="form-section-header">
               <h2 className="form-section-title">{FORM_STEPS[currentStep].label}</h2>
@@ -456,7 +455,8 @@ export default function HomePage() {
                 </button>
               ) : (
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleSubmit}
                   disabled={createRun.isPending || !isFormValid}
                   className="btn btn-primary btn-launch"
                 >

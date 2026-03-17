@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from sqlmodel import select
 
 from app.db import SessionDep
@@ -12,8 +12,10 @@ from app.models import (
     Run,
     RunSeed,
     RunStatus,
+    User,
 )
 from app.schemas.run import RunCreate, RunExport, RunRead
+from app.services.encryption import encrypt_api_key
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -68,9 +70,23 @@ def _serialize_run(run: Run, seed: RunSeed) -> dict:
 
 
 @router.post("/", response_model=RunRead, status_code=201)
-def create_run(run_create: RunCreate, session: SessionDep) -> dict:
+def create_run(
+    run_create: RunCreate,
+    session: SessionDep,
+    x_user_id: UUID = Header(...),  # noqa: B008
+    x_openrouter_key: str = Header(...),  # noqa: B008
+) -> dict:
+    user = session.get(User, x_user_id)
+    if not user:
+        user = User(id=x_user_id)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
     simulation_settings = _resolve_simulation_settings(run_create)
     seed_payload = _normalize_seed_payload(run_create)
+
+    encrypted_key = encrypt_api_key(x_openrouter_key)
 
     run = Run(
         agent_count=simulation_settings["agent_count"],
@@ -78,6 +94,8 @@ def create_run(run_create: RunCreate, session: SessionDep) -> dict:
         model_name=run_create.model_name,
         max_total_cost_usd=run_create.max_total_cost_usd,
         status=RunStatus.queued,
+        user_id=x_user_id,
+        encrypted_api_key=encrypted_key,
     )
     session.add(run)
     session.commit()
@@ -218,7 +236,8 @@ def export_run(run_id: UUID, session: SessionDep) -> dict:
             "predicted_conversion_signal": analysis_report.predicted_conversion_signal,
             "predicted_trust": analysis_report.predicted_trust,
             "overall_recommendation": (
-                (analysis_report.raw_json or {}).get("overall_recommendation") or "revise"
+                (analysis_report.raw_json or {}).get("overall_recommendation")
+                or "revise"
             ),
             "confidence_label": (
                 (analysis_report.raw_json or {}).get("confidence_label") or "medium"

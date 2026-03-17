@@ -43,10 +43,11 @@ class RateLimitError(Exception):
 
 
 class OpenRouterClient:
-    def __init__(self):
+    def __init__(self, api_key: str | None = None):
+        effective_key = api_key or settings.openrouter_api_key
         self.client = AsyncOpenAI(
             base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
+            api_key=effective_key,
         )
         self.default_model = settings.default_model
         self._langfuse_enabled = bool(

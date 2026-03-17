@@ -26,12 +26,13 @@ from app.models import (
     Stance,
 )
 from app.services.action_validator import ActionValidator, AgentAction
+from app.services.content_novelty import ContentNoveltyGuard
 from app.services.cost_guard import CostGuard
 from app.services.openrouter_client import OpenRouterClient, RateLimitError
 from app.services.personas import (
+    generate_agent_handle,
     segment_for_persona_name,
     select_personas,
-    generate_agent_handle,
 )
 from app.services.prompt_builder import (
     build_agent_action_prompt,
@@ -80,10 +81,11 @@ class ProcessAgentResult(BaseModel):
 
 
 class SimulationRunner:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, api_key: str | None = None):
         self.session = session
-        self.client = OpenRouterClient()
+        self.client = OpenRouterClient(api_key=api_key)
         self.validator = ActionValidator()
+        self.content_guard = ContentNoveltyGuard()
         self.cost_guard: CostGuard | None = None
 
     async def create_agents(self, run: Run, seed: RunSeed) -> list[Agent]:
@@ -142,10 +144,10 @@ class SimulationRunner:
         agent: Agent,
         round_number: int,
         posts: list[Post],
-        agent_action_log: dict[UUID, list[dict[str, str | int]]],
+        agent_action_log: dict[UUID, list[dict[str, str | int | None]]],
         follow_map: dict[UUID, set[UUID]],
         agent_map: dict[UUID, Agent],
-    ) -> tuple[list[dict[str, str]], list[dict[str, str | int]], list[str]]:
+    ) -> tuple[list[dict[str, str]], list[dict[str, str | int | None]], list[str]]:
         recent_posts = [
             post
             for post in posts
@@ -175,15 +177,69 @@ class SimulationRunner:
         self,
         agent_id: UUID,
         round_number: int,
-        action_text: str,
-        agent_action_log: dict[UUID, list[dict[str, str | int]]],
+        action_type: str,
+        agent_action_log: dict[UUID, list[dict[str, str | int | None]]],
+        *,
+        content: str | None = None,
+        progress_type: str | None = None,
+        root_post_id: UUID | None = None,
+        target_post_id: UUID | None = None,
+        note: str | None = None,
     ) -> None:
         agent_action_log[agent_id].append(
             {
                 "round": round_number,
-                "action": action_text,
+                "action": action_type,
+                "progress_type": progress_type,
+                "content_excerpt": (content[:80] if content is not None else None),
+                "opening_phrase": (
+                    self.content_guard.opening_phrase(content)
+                    if content is not None
+                    else None
+                ),
+                "root_post_id": str(root_post_id) if root_post_id else None,
+                "target_post_id": str(target_post_id) if target_post_id else None,
+                "note": note or action_type,
             }
         )
+
+    def _merge_metadata(
+        self,
+        left: dict[str, int | float] | None,
+        right: dict[str, int | float] | None,
+    ) -> dict[str, int | float] | None:
+        if left is None:
+            return right
+        if right is None:
+            return left
+
+        merged = dict(left)
+        for key, value in right.items():
+            if isinstance(value, (int, float)) and isinstance(
+                merged.get(key), (int, float)
+            ):
+                merged[key] = merged[key] + value
+            else:
+                merged[key] = value
+        return merged
+
+    def _novelty_retry_messages(
+        self,
+        messages: list[dict[str, str]],
+        reason: str,
+    ) -> list[dict[str, str]]:
+        return messages + [
+            {
+                "role": "user",
+                "content": (
+                    "Your previous draft failed backend novelty validation: "
+                    f"{reason}. You must add a new angle. "
+                    "Do not repeat your recent framing. "
+                    "If you cannot add new value, choose like or idle. "
+                    "Return JSON only."
+                ),
+            }
+        ]
 
     def execute_action(
         self,
@@ -193,20 +249,22 @@ class SimulationRunner:
         round_number: int,
         posts: list[Post],
         post_map: dict[UUID, Post],
+        like_map: dict[UUID, set[UUID]],
         follow_map: dict[UUID, set[UUID]],
         agent_map: dict[UUID, Agent],
-        agent_action_log: dict[UUID, list[dict[str, str | int]]],
+        agent_action_log: dict[UUID, list[dict[str, str | int | None]]],
     ) -> None:
         if action_result.action == ActionType.post:
             if action_result.content is None:
                 return
 
+            root_post_id = uuid4()
             post = Post(
                 id=uuid4(),
                 run_id=run.id,
                 author_agent_id=agent.id,
                 parent_post_id=None,
-                root_post_id=uuid4(),
+                root_post_id=root_post_id,
                 round_number=round_number,
                 content=action_result.content,
                 stance=action_result.stance,
@@ -219,8 +277,16 @@ class SimulationRunner:
             self._record_action(
                 agent.id,
                 round_number,
-                f"post: {action_result.content[:60]}",
+                "post",
                 agent_action_log,
+                content=action_result.content,
+                progress_type=(
+                    action_result.progress_type.value
+                    if action_result.progress_type is not None
+                    else None
+                ),
+                root_post_id=root_post_id,
+                note="original post",
             )
             return
 
@@ -251,8 +317,17 @@ class SimulationRunner:
             self._record_action(
                 agent.id,
                 round_number,
-                f"reply to {target_post.id}: {action_result.content[:60]}",
+                "reply",
                 agent_action_log,
+                content=action_result.content,
+                progress_type=(
+                    action_result.progress_type.value
+                    if action_result.progress_type is not None
+                    else None
+                ),
+                root_post_id=target_post.root_post_id,
+                target_post_id=target_post.id,
+                note=f"reply to {target_post.id}",
             )
             return
 
@@ -263,7 +338,17 @@ class SimulationRunner:
             target_post = post_map.get(action_result.target_post_id)
             if target_post is None:
                 return
+            if target_post.id in like_map[agent.id]:
+                self._record_action(
+                    agent.id,
+                    round_number,
+                    "idle",
+                    agent_action_log,
+                    note=f"idle after duplicate like target {target_post.id}",
+                )
+                return
 
+            like_map[agent.id].add(target_post.id)
             target_post.like_count += 1
             interaction = Interaction(
                 id=uuid4(),
@@ -278,8 +363,11 @@ class SimulationRunner:
             self._record_action(
                 agent.id,
                 round_number,
-                f"like post {target_post.id}",
+                "like",
                 agent_action_log,
+                root_post_id=target_post.root_post_id,
+                target_post_id=target_post.id,
+                note=f"like post {target_post.id}",
             )
             return
 
@@ -318,8 +406,9 @@ class SimulationRunner:
             self._record_action(
                 agent.id,
                 round_number,
-                f"follow {followed_handle}",
+                "follow",
                 agent_action_log,
+                note=f"follow {followed_handle}",
             )
             return
 
@@ -332,7 +421,9 @@ class SimulationRunner:
         round_num: int,
         seed: RunSeed,
         posts: list[Post],
-        agent_action_log: dict[UUID, list[dict[str, str | int]]],
+        post_map: dict[UUID, Post],
+        agent_action_log: dict[UUID, list[dict[str, str | int | None]]],
+        like_map: dict[UUID, set[UUID]],
         follow_map: dict[UUID, set[UUID]],
         agent_map: dict[UUID, Agent],
     ) -> ProcessAgentResult:
@@ -356,28 +447,60 @@ class SimulationRunner:
                 follows=follows,
             )
 
-            action_result, metadata = await self.client.parse(
-                messages=messages,
-                response_model=AgentAction,
-                model=run.model_name,
-                run_id=str(run.id),
-                agent_id=str(agent.id),
-                stage="agent_action",
-            )
+            merged_metadata: dict[str, int | float] | None = None
 
-            is_valid, error = self.validator.validate(action_result)
-            if not is_valid:
+            for attempt in range(2):
+                action_result, metadata = await self.client.parse(
+                    messages=messages,
+                    response_model=AgentAction,
+                    model=run.model_name,
+                    run_id=str(run.id),
+                    agent_id=str(agent.id),
+                    stage="agent_action",
+                )
+                merged_metadata = self._merge_metadata(merged_metadata, metadata)
+
+                action_result = self.validator.normalize(action_result)
+                is_valid, error = self.validator.validate(action_result)
+                if not is_valid:
+                    return ProcessAgentResult(
+                        agent_id=agent.id,
+                        metadata=merged_metadata,
+                        validation_error=error,
+                    )
+
+                novelty_check = self.content_guard.evaluate(
+                    action=action_result,
+                    agent_id=agent.id,
+                    posts=posts,
+                    post_map=post_map,
+                    recent_actions=recent_actions,
+                )
+                if novelty_check.accepted:
+                    return ProcessAgentResult(
+                        agent_id=agent.id,
+                        action_result=action_result,
+                        metadata=merged_metadata,
+                    )
+
+                if attempt == 0 and novelty_check.reason is not None:
+                    messages = self._novelty_retry_messages(
+                        messages=messages,
+                        reason=novelty_check.reason,
+                    )
+                    continue
+
+                fallback_action = self.content_guard.fallback_action(
+                    action=action_result,
+                    liked_post_ids=like_map.get(agent.id, set()),
+                )
+                fallback_action = self.validator.normalize(fallback_action)
+
                 return ProcessAgentResult(
                     agent_id=agent.id,
-                    metadata=metadata,
-                    validation_error=error,
+                    action_result=fallback_action,
+                    metadata=merged_metadata,
                 )
-
-            return ProcessAgentResult(
-                agent_id=agent.id,
-                action_result=action_result,
-                metadata=metadata,
-            )
 
         except RateLimitError as error:
             logger.warning(
@@ -425,13 +548,20 @@ class SimulationRunner:
 
             all_posts = [seed_post]
             post_map = {seed_post.id: seed_post}
+            like_map: dict[UUID, set[UUID]] = defaultdict(set)
             follow_map: dict[UUID, set[UUID]] = defaultdict(set)
-            agent_action_log: dict[UUID, list[dict[str, str | int]]] = defaultdict(list)
+            agent_action_log: dict[UUID, list[dict[str, str | int | None]]] = (
+                defaultdict(list)
+            )
             self._record_action(
                 seed_post.author_agent_id,
                 seed_post.round_number,
-                f"seed post: {seed_post.content[:60]}",
+                "post",
                 agent_action_log,
+                content=seed_post.content,
+                progress_type="new_claim",
+                root_post_id=seed_post.root_post_id,
+                note="seed post",
             )
 
             for round_num in range(1, run.round_count + 1):
@@ -467,7 +597,9 @@ class SimulationRunner:
                         round_num=round_num,
                         seed=seed,
                         posts=round_snapshot,
+                        post_map=post_map,
                         agent_action_log=agent_action_log,
+                        like_map=like_map,
                         follow_map=follow_map,
                         agent_map=agent_map,
                     )
@@ -542,6 +674,7 @@ class SimulationRunner:
                         round_number=round_num,
                         posts=all_posts,
                         post_map=post_map,
+                        like_map=like_map,
                         follow_map=follow_map,
                         agent_map=agent_map,
                         agent_action_log=agent_action_log,
@@ -579,7 +712,9 @@ class SimulationRunner:
         agent_map: dict[UUID, Agent],
     ) -> dict[str, str | int | float]:
         segment_agent_ids = {
-            agent.id for agent in agents if segment_for_persona_name(agent.persona_name) == segment
+            agent.id
+            for agent in agents
+            if segment_for_persona_name(agent.persona_name) == segment
         }
         segment_posts = [
             post for post in posts if post.author_agent_id in segment_agent_ids
@@ -594,35 +729,48 @@ class SimulationRunner:
         dominant_stance = (
             stance_counts.most_common(1)[0][0] if stance_counts else "neutral"
         )
-        top_posts = " | ".join(
-            [
-                f"{format_handle(agent_map[post.author_agent_id].handle)}: {post.content[:90]}"
-                for post in sorted(
-                    segment_posts,
-                    key=lambda item: (item.like_count, item.reply_count),
-                    reverse=True,
-                )[:2]
-                if post.author_agent_id in agent_map
-            ]
-        ) or "No standout posts"
-        objections = " | ".join(
-            [
-                post.content[:90]
-                for post in segment_posts
-                if post.stance in (Stance.skeptical, Stance.critical)
-            ][:2]
-        ) or "No major objections observed"
+        top_posts = (
+            " | ".join(
+                [
+                    (
+                        f"{format_handle(agent_map[post.author_agent_id].handle)}: "
+                        f"{post.content[:90]}"
+                    )
+                    for post in sorted(
+                        segment_posts,
+                        key=lambda item: (item.like_count, item.reply_count),
+                        reverse=True,
+                    )[:2]
+                    if post.author_agent_id in agent_map
+                ]
+            )
+            or "No standout posts"
+        )
+        objections = (
+            " | ".join(
+                [
+                    post.content[:90]
+                    for post in segment_posts
+                    if post.stance in (Stance.skeptical, Stance.critical)
+                ][:2]
+            )
+            or "No major objections observed"
+        )
 
         return {
             "segment": segment,
-            "simulated_share": round(len(segment_agent_ids) / max(run.agent_count, 1), 2),
+            "simulated_share": round(
+                len(segment_agent_ids) / max(run.agent_count, 1), 2
+            ),
             "post_count": len(segment_posts),
             "like_count": sum(
                 1
                 for interaction in segment_interactions
                 if interaction.interaction_type == InteractionType.like
             ),
-            "reply_count": sum(1 for post in segment_posts if post.parent_post_id is not None),
+            "reply_count": sum(
+                1 for post in segment_posts if post.parent_post_id is not None
+            ),
             "follow_count": sum(
                 1
                 for interaction in segment_interactions
@@ -659,7 +807,9 @@ class SimulationRunner:
 
         total_posts = len(posts)
         total_likes = sum(
-            1 for interaction in interactions if interaction.interaction_type == InteractionType.like
+            1
+            for interaction in interactions
+            if interaction.interaction_type == InteractionType.like
         )
         total_replies = sum(1 for post in posts if post.parent_post_id is not None)
         total_follows = sum(

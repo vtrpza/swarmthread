@@ -5,8 +5,10 @@ from app.api import (
     analysis_router,
     feed_router,
     health_router,
+    models_router,
     runs_router,
     threads_router,
+    users_router,
 )
 from app.config import settings
 from app.logging import configure_logging
@@ -21,6 +23,8 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(users_router)
+app.include_router(models_router)
 app.include_router(runs_router)
 app.include_router(feed_router)
 app.include_router(threads_router)

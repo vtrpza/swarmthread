@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     langfuse_host: str = "https://cloud.langfuse.com"
     environment: str = "development"
     max_concurrent_llm_calls: int = 20
+    encryption_key: str | None = None
 
     @property
     def effective_database_url(self) -> str:
