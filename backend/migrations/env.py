@@ -5,7 +5,9 @@ from pathlib import Path
 from alembic import context
 from sqlmodel import SQLModel
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import app.models  # noqa: F401, E402 — register all tables with SQLModel.metadata
 
 config = context.config
 

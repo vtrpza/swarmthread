@@ -13,35 +13,40 @@ export interface Run {
   started_at: string | null
   completed_at: string | null
   error_message: string | null
+  title: string
+  brand: string
+  goal: string
+  audience_segments: string[]
 }
 
 export interface RunSeed {
-  title: string
+  title?: string
   brand: string
   goal: string
-  content_type: string
+  content_type?: string
   message: string
-  cta: string
-  tone: string
-  audience_segments: string[]
-  controversy_level: string
+  cta?: string
+  tone?: string
+  audience_segments?: string[]
 }
 
 export interface RunCreate {
-  title: string
+  title?: string
   brand: string
   goal: string
-  content_type: string
+  content_type?: string
   message: string
-  cta: string
-  tone: string
-  audience_segments: string[]
-  controversy_level: string
+  cta?: string
+  tone?: string
+  audience_segments?: string[]
+  simulation_preset?: SimulationPreset
   agent_count?: number
   round_count?: number
   model_name?: string
   max_total_cost_usd?: number
 }
+
+export type SimulationPreset = "quick" | "standard" | "deep"
 
 export interface Agent {
   id: string
@@ -117,11 +122,26 @@ export interface AnalysisReport {
   predicted_shareability: number
   predicted_conversion_signal: number
   predicted_trust: number
+  overall_recommendation: "ship" | "revise" | "avoid"
+  confidence_label: "low" | "medium" | "high"
+  best_fit_segments: string[]
+  risky_segments: string[]
+  segment_reactions: SegmentReaction[]
   top_positive_themes: string[]
   top_negative_themes: string[]
   top_objections: string[]
   recommended_rewrite: string | null
   created_at: string
+}
+
+export interface SegmentReaction {
+  segment: string
+  simulated_share: number
+  reaction: "positive" | "mixed" | "negative"
+  summary: string
+  key_resonators: string[]
+  key_objections: string[]
+  representative_posts: string[]
 }
 
 export const AUDIENCE_SEGMENTS = [
@@ -137,8 +157,6 @@ export const AUDIENCE_SEGMENTS = [
   "casual observer",
 ] as const
 
-export const CONTROVERSY_LEVELS = ["low", "medium", "high"] as const
-
 export const CONTENT_TYPES = [
   "thought_leadership",
   "product_launch",
@@ -146,3 +164,12 @@ export const CONTENT_TYPES = [
   "promotional",
   "announcement",
 ] as const
+
+export const SIMULATION_PRESETS: Record<
+  SimulationPreset,
+  { label: string; agentCount: number; roundCount: number }
+> = {
+  quick: { label: "Quick", agentCount: 12, roundCount: 60 },
+  standard: { label: "Standard", agentCount: 24, roundCount: 120 },
+  deep: { label: "Deep", agentCount: 40, roundCount: 200 },
+}

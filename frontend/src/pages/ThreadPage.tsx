@@ -2,12 +2,32 @@ import { useQuery } from "@tanstack/react-query"
 import { useParams, Link } from "react-router"
 import { getThread } from "../api/runs"
 
-const STANCE_COLORS: Record<string, { bg: string; text: string }> = {
-  supportive: { bg: "var(--success-bg)", text: "var(--success)" },
-  skeptical: { bg: "var(--warning-bg)", text: "var(--warning)" },
-  neutral: { bg: "var(--bg-page)", text: "var(--text-secondary)" },
-  critical: { bg: "var(--error-bg)", text: "var(--error)" },
-  curious: { bg: "var(--primary-bg)", text: "var(--primary)" },
+const STANCE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  supportive: { 
+    bg: "var(--success-subtle)", 
+    text: "var(--success)",
+    border: "var(--success-glow)"
+  },
+  skeptical: { 
+    bg: "var(--warning-subtle)", 
+    text: "var(--warning)",
+    border: "var(--warning-glow)"
+  },
+  neutral: { 
+    bg: "var(--bg-subtle)", 
+    text: "var(--text-tertiary)",
+    border: "var(--border-subtle)"
+  },
+  critical: { 
+    bg: "var(--error-subtle)", 
+    text: "var(--error)",
+    border: "var(--error-glow)"
+  },
+  curious: { 
+    bg: "var(--primary-subtle)", 
+    text: "var(--primary)",
+    border: "var(--primary-glow)"
+  },
 }
 
 interface ThreadItemData {
@@ -28,6 +48,10 @@ interface ThreadItemProps {
   depth?: number
 }
 
+function formatHandle(handle: string): string {
+  return handle.startsWith("@") ? handle : `@${handle}`
+}
+
 function ThreadItem({ item, runId, depth = 0 }: ThreadItemProps) {
   const stanceStyle = STANCE_COLORS[item.stance] || STANCE_COLORS.neutral
 
@@ -40,13 +64,14 @@ function ThreadItem({ item, runId, depth = 0 }: ThreadItemProps) {
             to={`/runs/${runId}/agents/${item.author_agent_id}`}
             className="author-link"
           >
-            <span className="author-handle">@{item.author_handle}</span>
+            <span className="author-handle">{formatHandle(item.author_handle)}</span>
           </Link>
           <span 
             className="stance-tag"
             style={{ 
               background: stanceStyle.bg, 
-              color: stanceStyle.text 
+              color: stanceStyle.text,
+              borderColor: stanceStyle.border
             }}
           >
             {item.stance}
@@ -76,7 +101,7 @@ function ThreadItem({ item, runId, depth = 0 }: ThreadItemProps) {
       <style>{`
         .thread-item {
           position: relative;
-          padding: var(--space-3) 0;
+          padding: var(--space-4) 0;
         }
 
         .thread-item-connector {
@@ -84,23 +109,23 @@ function ThreadItem({ item, runId, depth = 0 }: ThreadItemProps) {
           left: -12px;
           top: 0;
           bottom: 0;
-          width: 2px;
-          background: var(--border-color);
+          width: 1px;
+          background: var(--border-subtle);
         }
 
         .thread-item:first-child .thread-item-connector {
-          top: 8px;
+          top: 12px;
         }
 
         .thread-item-content {
-          padding-left: var(--space-2);
+          padding-left: var(--space-3);
         }
 
         .thread-item-header {
           display: flex;
           align-items: center;
           gap: var(--space-2);
-          margin-bottom: var(--space-2);
+          margin-bottom: var(--space-3);
         }
 
         .author-link {
@@ -122,22 +147,26 @@ function ThreadItem({ item, runId, depth = 0 }: ThreadItemProps) {
           padding: 1px 6px;
           border-radius: var(--radius-sm);
           font-weight: 500;
+          letter-spacing: var(--tracking-wide);
+          text-transform: uppercase;
+          border: 1px solid transparent;
         }
 
         .round-badge {
           font-size: var(--text-xs);
-          color: var(--text-tertiary);
+          color: var(--text-muted);
+          font-family: var(--font-mono);
         }
 
         .thread-text {
           color: var(--text-primary);
-          line-height: 1.6;
-          margin-bottom: var(--space-2);
+          line-height: var(--leading-relaxed);
+          margin-bottom: var(--space-3);
         }
 
         .thread-stats {
           display: flex;
-          gap: var(--space-3);
+          gap: var(--space-4);
         }
 
         .stat {
@@ -146,6 +175,7 @@ function ThreadItem({ item, runId, depth = 0 }: ThreadItemProps) {
           gap: 4px;
           font-size: var(--text-xs);
           color: var(--text-tertiary);
+          font-family: var(--font-mono);
         }
       `}</style>
     </div>
@@ -161,9 +191,12 @@ function ThreadPage() {
 
   return (
     <div className="page-container">
-      <div className="animate-fade-in">
+      <div className="animate-reveal">
         <Link to={`/runs/${runId}/feed`} className="back-link">
-          ← Back to Feed
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Back to Feed
         </Link>
 
         <h1 className="page-title" style={{ marginTop: "8px" }}>Thread</h1>
@@ -183,18 +216,19 @@ function ThreadPage() {
       )}
 
       {thread && (
-        <div className="thread-container animate-scale-in">
+        <div className="thread-container animate-scale">
           <ThreadItem item={thread.root} runId={runId!} />
         </div>
       )}
 
       <style>{`
         .thread-container {
-          margin-top: var(--space-6);
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
+          margin-top: var(--space-8);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
           border-radius: var(--radius-xl);
-          padding: var(--space-5);
+          padding: var(--space-6);
+          box-shadow: var(--shadow-md);
         }
       `}</style>
     </div>

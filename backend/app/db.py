@@ -13,7 +13,9 @@ def get_database_url(url: str) -> str:
 
 
 engine = create_engine(
-    get_database_url(settings.database_url), echo=settings.environment == "development"
+    get_database_url(settings.database_url),
+    echo=settings.environment == "development",
+    pool_pre_ping=True,
 )
 
 

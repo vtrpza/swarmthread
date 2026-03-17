@@ -1,7 +1,5 @@
 from pathlib import Path
-from uuid import UUID
-
-from app.models import Agent, Post, RunSeed
+from app.models import Agent, RunSeed
 
 
 def load_prompt_template(name: str) -> str:
@@ -14,17 +12,23 @@ def build_agent_action_prompt(
     agent: Agent,
     round_number: int,
     total_rounds: int,
-    recent_posts: list[Post],
+    recent_posts: list[dict[str, str]],
     recent_actions: list[dict],
-    follows: list[UUID],
+    follows: list[str],
 ) -> list[dict[str, str]]:
     template = load_prompt_template("agent_decide_action.md")
 
     recent_feed = (
         "\n".join(
-            f"- @{p.author_agent_id}: {p.content[:200]}..."
-            if len(p.content) > 200
-            else f"- @{p.author_agent_id}: {p.content}"
+            (
+                f"- Post ID {p['post_id']} by {p['author_handle']} "
+                f"(Agent ID {p['author_agent_id']}): {p['content'][:200]}..."
+            )
+            if len(p["content"]) > 200
+            else (
+                f"- Post ID {p['post_id']} by {p['author_handle']} "
+                f"(Agent ID {p['author_agent_id']}): {p['content']}"
+            )
             for p in recent_posts[-20:]
         )
         or "No recent posts."
@@ -35,7 +39,7 @@ def build_agent_action_prompt(
         or "No recent actions."
     )
 
-    follows_str = ", ".join(str(f) for f in follows[:10]) or "None"
+    follows_str = ", ".join(follows[:10]) or "None"
 
     prompt = template.replace("{{title}}", seed.title)
     prompt = prompt.replace("{{brand}}", seed.brand)
@@ -44,7 +48,6 @@ def build_agent_action_prompt(
     prompt = prompt.replace("{{cta}}", seed.cta)
     prompt = prompt.replace("{{tone}}", seed.tone)
     prompt = prompt.replace("{{audience_segments}}", ", ".join(seed.audience_segments))
-    prompt = prompt.replace("{{controversy_level}}", seed.controversy_level)
     prompt = prompt.replace("{{handle}}", agent.handle)
     prompt = prompt.replace("{{display_name}}", agent.display_name)
     prompt = prompt.replace("{{persona_name}}", agent.persona_name)
@@ -77,31 +80,33 @@ def build_analysis_prompt(
     total_likes: int,
     total_replies: int,
     total_follows: int,
-    agent_summaries: list[dict],
+    segment_summaries: list[dict],
     key_posts: list[dict],
-    objection_patterns: list[str],
 ) -> list[dict[str, str]]:
     template = load_prompt_template("final_report.md")
 
-    agent_summaries_str = "\n".join(
-        f"- {a['handle']}: {a['persona_name']} - {a['stance_bias']}"
-        f" stance, {a['post_count']} posts"
-        for a in agent_summaries
+    segment_summaries_str = "\n".join(
+        (
+            f"- {summary['segment']} ({summary['simulated_share']} of agents): "
+            f"{summary['post_count']} posts, {summary['like_count']} likes given, "
+            f"{summary['reply_count']} replies, {summary['follow_count']} follows, "
+            f"dominant stance {summary['dominant_stance']}. "
+            f"Top posts: {summary['top_posts']}. "
+            f"Objections: {summary['objections']}."
+        )
+        for summary in segment_summaries
     )
 
     key_posts_str = (
         "\n".join(
-            f"- @{p['author']}: {p['content'][:300]}..."
+            (
+                f"- {p['author_handle']} ({p['segment']}): {p['content'][:300]}..."
+            )
             if len(p["content"]) > 300
-            else f"- @{p['author']}: {p['content']}"
+            else f"- {p['author_handle']} ({p['segment']}): {p['content']}"
             for p in key_posts[:20]
         )
         or "No key posts identified."
-    )
-
-    objections_str = (
-        "\n".join(f"- {o}" for o in objection_patterns[:10])
-        or "No significant objections raised."
     )
 
     prompt = template.replace("{{title}}", seed.title)
@@ -117,9 +122,8 @@ def build_analysis_prompt(
     prompt = prompt.replace("{{total_likes}}", str(total_likes))
     prompt = prompt.replace("{{total_replies}}", str(total_replies))
     prompt = prompt.replace("{{total_follows}}", str(total_follows))
-    prompt = prompt.replace("{{agent_personas}}", agent_summaries_str)
+    prompt = prompt.replace("{{segment_summaries}}", segment_summaries_str)
     prompt = prompt.replace("{{key_posts}}", key_posts_str)
-    prompt = prompt.replace("{{objection_patterns}}", objections_str)
 
     return [
         {

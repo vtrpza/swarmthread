@@ -1,18 +1,5 @@
 import { AUDIENCE_SEGMENTS } from "../../types"
 
-const SEGMENT_ICONS: Record<string, string> = {
-  "performance marketer": "📊",
-  "brand strategist": "🎯",
-  "skeptical founder": "🤔",
-  "agency lead": "👔",
-  "data scientist": "📈",
-  "cynical operator": "😏",
-  "enthusiastic early adopter": "🚀",
-  "competitor-adjacent voice": "🔍",
-  "creator/influencer type": "✨",
-  "casual observer": "👁️",
-}
-
 const SEGMENT_DESCRIPTIONS: Record<string, string> = {
   "performance marketer": "Focuses on ROI, metrics, and conversion rates",
   "brand strategist": "Cares about positioning, messaging, and brand consistency",
@@ -41,17 +28,75 @@ export function SegmentCard({ segment, isSelected, onToggle }: SegmentCardProps)
       aria-pressed={isSelected}
       title={SEGMENT_DESCRIPTIONS[segment]}
     >
-      <span className="segment-card-icon" aria-hidden="true">
-        {SEGMENT_ICONS[segment] || "👤"}
-      </span>
       <span className="segment-card-label">{segment}</span>
       {isSelected && (
         <span className="segment-card-check" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </span>
       )}
+
+      <style>{`
+        .segment-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: var(--space-3);
+          padding: var(--space-4);
+          background: var(--bg-subtle);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+          text-align: left;
+          position: relative;
+          min-height: auto;
+        }
+
+        .segment-card:hover {
+          border-color: var(--border-default);
+          background: var(--bg-surface);
+        }
+
+        .segment-card-selected {
+          border-color: var(--primary);
+          background: var(--primary-subtle);
+        }
+
+        .segment-card-selected:hover {
+          border-color: var(--primary);
+          background: var(--primary-subtle);
+        }
+
+        .segment-card-label {
+          font-size: var(--text-sm);
+          font-weight: 500;
+          color: var(--text-primary);
+          line-height: 1.4;
+        }
+
+        .segment-card-selected .segment-card-label {
+          color: var(--primary);
+        }
+
+        .segment-card-check {
+          width: 20px;
+          height: 20px;
+          background: var(--primary);
+          color: white;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .segment-card-check svg {
+          width: 12px;
+          height: 12px;
+        }
+      `}</style>
     </button>
   )
 }
@@ -104,6 +149,71 @@ export function SegmentSelector({
           />
         ))}
       </div>
+
+      <style>{`
+        .segment-selector {
+          margin-top: var(--space-4);
+        }
+
+        .segment-selector-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: var(--space-4);
+        }
+
+        .segment-selector-count {
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+          font-weight: 500;
+          font-family: var(--font-mono);
+        }
+
+        .segment-selector-actions {
+          display: flex;
+          gap: var(--space-3);
+        }
+
+        .segment-selector-action {
+          background: none;
+          border: none;
+          font-size: var(--text-sm);
+          font-weight: 500;
+          color: var(--primary);
+          cursor: pointer;
+          padding: var(--space-1) var(--space-2);
+          border-radius: var(--radius-sm);
+          transition: all var(--transition-fast);
+          min-height: auto;
+        }
+
+        .segment-selector-action:hover:not(:disabled) {
+          background: var(--primary-subtle);
+        }
+
+        .segment-selector-action:disabled {
+          color: var(--text-muted);
+          cursor: not-allowed;
+        }
+
+        .segment-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: var(--space-3);
+        }
+
+        @media (max-width: 640px) {
+          .segment-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .segment-selector-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--space-2);
+          }
+        }
+      `}</style>
     </div>
   )
 }

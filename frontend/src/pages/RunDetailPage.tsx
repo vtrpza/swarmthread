@@ -1,6 +1,7 @@
-import { useParams, Link } from "react-router"
+import { Link, useParams } from "react-router"
 import { useRun } from "../hooks/useRun"
-import type { RunStatus } from "../types"
+import { SIMULATION_PRESETS } from "../types"
+import type { RunStatus, SimulationPreset } from "../types"
 
 const STATUS_LABELS: Record<RunStatus, string> = {
   queued: "Queued",
@@ -8,6 +9,16 @@ const STATUS_LABELS: Record<RunStatus, string> = {
   completed: "Completed",
   failed: "Failed",
   cancelled: "Cancelled",
+}
+
+function inferPreset(agentCount: number, roundCount: number): string {
+  const match = (Object.entries(SIMULATION_PRESETS) as Array<
+    [SimulationPreset, (typeof SIMULATION_PRESETS)[SimulationPreset]]
+  >).find(([, preset]) => {
+    return preset.agentCount === agentCount && preset.roundCount === roundCount
+  })
+
+  return match ? match[1].label : "Custom"
 }
 
 function RunDetailPage() {
@@ -31,7 +42,7 @@ function RunDetailPage() {
           <div className="error-state-title">Failed to load run</div>
           <div>{error instanceof Error ? error.message : "Run not found"}</div>
           <Link to="/" className="back-link" style={{ marginTop: "16px" }}>
-            ← Back to Create
+            Back to Create
           </Link>
         </div>
       </div>
@@ -40,24 +51,28 @@ function RunDetailPage() {
 
   const canViewFeed = run.status === "running" || run.status === "completed"
   const canViewAnalysis = run.status === "completed"
+  const presetLabel = inferPreset(run.agent_count, run.round_count)
 
   return (
     <div className="page-container">
-      <div className="animate-fade-in">
+      <div className="animate-reveal">
         <Link to="/" className="back-link">
-          ← New Run
+          New Run
         </Link>
 
         <div className="run-header">
           <div className="run-title-row">
-            <h1 className="page-title">Run {run.id.slice(0, 8)}</h1>
+            <h1 className="page-title">{run.title}</h1>
             <span className={`status-badge status-${run.status}`}>
               {STATUS_LABELS[run.status]}
             </span>
           </div>
+          <p className="run-subtitle">
+            {run.brand} · {run.goal}
+          </p>
         </div>
 
-        <div className="stat-grid stagger-item stagger-1">
+        <div className="stat-grid">
           <div className="stat-card">
             <div className="stat-value">{run.agent_count}</div>
             <div className="stat-label">Agents</div>
@@ -67,14 +82,29 @@ function RunDetailPage() {
             <div className="stat-label">Rounds</div>
           </div>
           <div className="stat-card">
-            <div className="stat-value truncate" title={run.model_name}>
-              {run.model_name.split("/").pop()}
-            </div>
-            <div className="stat-label">Model</div>
+            <div className="stat-value">{presetLabel}</div>
+            <div className="stat-label">Preset</div>
           </div>
           <div className="stat-card">
             <div className="stat-value">${run.max_total_cost_usd}</div>
-            <div className="stat-label">Max Cost</div>
+            <div className="stat-label">Budget</div>
+          </div>
+        </div>
+
+        <div className="section">
+          <h3 className="section-title">Audience Focus</h3>
+          <div className="segment-badges">
+            {run.audience_segments.length > 0 ? (
+              run.audience_segments.map((segment) => (
+                <span key={segment} className="segment-badge">
+                  {segment}
+                </span>
+              ))
+            ) : (
+              <span className="segment-badge segment-badge-muted">
+                Balanced default audience mix
+              </span>
+            )}
           </div>
         </div>
 
@@ -82,40 +112,19 @@ function RunDetailPage() {
           <h3 className="section-title">Views</h3>
           <div className="action-buttons">
             {canViewFeed ? (
-              <Link
-                to={`/runs/${runId}/feed`}
-                className="btn btn-primary"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
+              <Link to={`/runs/${runId}/feed`} className="btn btn-primary">
                 View Feed
               </Link>
             ) : (
-              <span className="btn btn-disabled">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" opacity="0.5">
-                  <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                Feed (waiting)
-              </span>
+              <span className="btn btn-disabled">Feed (waiting)</span>
             )}
+
             {canViewAnalysis ? (
-              <Link
-                to={`/runs/${runId}/analysis`}
-                className="btn btn-primary"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 14V8l3 4 3-6 4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+              <Link to={`/runs/${runId}/analysis`} className="btn btn-secondary">
                 View Analysis
               </Link>
             ) : (
-              <span className="btn btn-disabled">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" opacity="0.5">
-                  <path d="M3 14V8l3 4 3-6 4 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Analysis (waiting)
-              </span>
+              <span className="btn btn-disabled">Analysis (waiting)</span>
             )}
           </div>
         </div>
@@ -149,7 +158,7 @@ function RunDetailPage() {
 
       <style>{`
         .run-header {
-          margin: var(--space-6) 0;
+          margin: var(--space-8) 0;
         }
 
         .run-title-row {
@@ -159,6 +168,15 @@ function RunDetailPage() {
           flex-wrap: wrap;
         }
 
+        .run-subtitle {
+          margin-top: var(--space-2);
+          color: var(--text-secondary);
+        }
+
+        .section {
+          margin-top: var(--space-8);
+        }
+
         .action-buttons {
           display: flex;
           gap: var(--space-3);
@@ -166,32 +184,54 @@ function RunDetailPage() {
         }
 
         .btn-disabled {
-          background: var(--bg-page);
-          color: var(--text-disabled);
-          border: 1px solid var(--border-color);
+          background: var(--bg-subtle);
+          color: var(--text-muted);
+          border: 1px solid var(--border-subtle);
           cursor: not-allowed;
           display: inline-flex;
           align-items: center;
-          gap: var(--space-2);
-          height: 36px;
-          padding: 0 var(--space-4);
+          height: 48px;
+          padding: 0 var(--space-5);
           border-radius: var(--radius-md);
           font-size: var(--text-base);
+          font-weight: 500;
+        }
+
+        .segment-badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: var(--space-2);
+        }
+
+        .segment-badge {
+          padding: var(--space-2) var(--space-3);
+          border-radius: var(--radius-md);
+          background: var(--primary-subtle);
+          color: var(--primary);
+          border: 1px solid var(--primary-glow);
+          font-size: var(--text-sm);
+          font-weight: 500;
+        }
+
+        .segment-badge-muted {
+          background: var(--bg-subtle);
+          color: var(--text-secondary);
+          border-color: var(--border-default);
         }
 
         .run-meta {
-          margin-top: var(--space-8);
+          margin-top: var(--space-10);
           padding: var(--space-5);
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
           border-radius: var(--radius-lg);
         }
 
         .meta-item {
           display: flex;
           justify-content: space-between;
-          padding: var(--space-2) 0;
-          border-bottom: 1px solid var(--border-color-light);
+          padding: var(--space-3) 0;
+          border-bottom: 1px solid var(--border-subtle);
         }
 
         .meta-item:last-child {
@@ -199,14 +239,15 @@ function RunDetailPage() {
         }
 
         .meta-label {
-          color: var(--text-secondary);
+          color: var(--text-tertiary);
           font-size: var(--text-sm);
+          font-weight: 500;
         }
 
         .meta-value {
-          color: var(--text-primary);
+          color: var(--text-secondary);
           font-size: var(--text-sm);
-          font-weight: 500;
+          font-family: var(--font-mono);
         }
       `}</style>
     </div>

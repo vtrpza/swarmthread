@@ -2,6 +2,10 @@ import { useQuery } from "@tanstack/react-query"
 import { useParams, Link } from "react-router"
 import { getAgent } from "../api/runs"
 
+function formatHandle(handle: string): string {
+  return handle.startsWith("@") ? handle : `@${handle}`
+}
+
 function AgentPage() {
   const { runId, agentId } = useParams()
   const { data: agent, isLoading, error } = useQuery({
@@ -11,9 +15,12 @@ function AgentPage() {
 
   return (
     <div className="page-container">
-      <div className="animate-fade-in">
+      <div className="animate-reveal">
         <Link to={`/runs/${runId}/feed`} className="back-link">
-          ← Back to Feed
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Back to Feed
         </Link>
       </div>
 
@@ -31,18 +38,18 @@ function AgentPage() {
       )}
 
       {agent && (
-        <div className="agent-profile animate-fade-in">
+        <div className="agent-profile animate-reveal">
           <div className="profile-header">
             <div className="profile-avatar">
               {agent.profile.handle.charAt(0).toUpperCase()}
             </div>
             <div className="profile-info">
-              <h1 className="profile-handle">@{agent.profile.handle}</h1>
+              <h1 className="profile-handle">{formatHandle(agent.profile.handle)}</h1>
               <p className="profile-name">{agent.profile.display_name}</p>
             </div>
           </div>
 
-          <div className="stat-grid stagger-item">
+          <div className="stat-grid stagger-item" style={{ animationDelay: "0.1s" }}>
             <div className="stat-card">
               <div className="stat-value">{agent.profile.post_count}</div>
               <div className="stat-label">Posts</div>
@@ -61,25 +68,23 @@ function AgentPage() {
             </div>
           </div>
 
-          <div className="profile-section">
+          <div className="profile-section" style={{ animationDelay: "0.2s" }}>
             <h3 className="section-title">Persona</h3>
-            <div className="card">
+            <div className="card persona-card">
               <div className="persona-name">{agent.profile.persona_name}</div>
               <p className="persona-desc">{agent.profile.persona_description}</p>
             </div>
           </div>
 
-          <div className="profile-section">
-            <h3 className="section-title">Biases</h3>
-            <div className="bias-tags">
-              <span className="bias-tag">
-                <span className="bias-label">Stance</span>
-                <span className="bias-value">{agent.profile.stance_bias}</span>
-              </span>
+          <div className="profile-section" style={{ animationDelay: "0.3s" }}>
+            <h3 className="section-title">Bias</h3>
+            <div className="bias-tag">
+              <span className="bias-label">Stance</span>
+              <span className="bias-value">{agent.profile.stance_bias}</span>
             </div>
           </div>
 
-          <div className="profile-section">
+          <div className="profile-section" style={{ animationDelay: "0.4s" }}>
             <h3 className="section-title">Recent Posts</h3>
             {agent.posts.length === 0 ? (
               <div className="empty-state">
@@ -90,7 +95,7 @@ function AgentPage() {
                 {agent.posts.slice(0, 10).map((post, index) => (
                   <div 
                     key={post.post_id} 
-                    className="post-card stagger-item"
+                    className="post-card"
                     style={{ animationDelay: `${0.05 * (index + 1)}s` }}
                   >
                     <p className="post-content">{post.content}</p>
@@ -119,27 +124,29 @@ function AgentPage() {
 
       <style>{`
         .agent-profile {
-          margin-top: var(--space-6);
+          margin-top: var(--space-8);
         }
 
         .profile-header {
           display: flex;
           align-items: center;
           gap: var(--space-5);
-          margin-bottom: var(--space-6);
+          margin-bottom: var(--space-8);
         }
 
         .profile-avatar {
-          width: 72px;
-          height: 72px;
+          width: 80px;
+          height: 80px;
           border-radius: var(--radius-xl);
-          background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+          background: linear-gradient(135deg, var(--primary), var(--primary-active));
           color: white;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: var(--text-3xl);
           font-weight: 600;
+          font-family: var(--font-display);
+          box-shadow: var(--shadow-glow-sm);
         }
 
         .profile-info {
@@ -147,8 +154,9 @@ function AgentPage() {
         }
 
         .profile-handle {
+          font-family: var(--font-display);
           font-size: var(--text-3xl);
-          font-weight: 600;
+          font-weight: 400;
           color: var(--text-primary);
         }
 
@@ -159,34 +167,37 @@ function AgentPage() {
         }
 
         .profile-section {
-          margin-bottom: var(--space-6);
+          margin-bottom: var(--space-8);
+          opacity: 0;
+          animation: revealUp 0.5s ease-out forwards;
+        }
+
+        .persona-card {
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
         }
 
         .persona-name {
           font-weight: 600;
           color: var(--text-primary);
           margin-bottom: var(--space-2);
+          font-size: var(--text-lg);
         }
 
         .persona-desc {
           color: var(--text-secondary);
           font-size: var(--text-sm);
-          line-height: 1.6;
-        }
-
-        .bias-tags {
-          display: flex;
-          gap: var(--space-3);
-          flex-wrap: wrap;
+          line-height: var(--leading-relaxed);
+          margin: 0;
         }
 
         .bias-tag {
-          display: flex;
+          display: inline-flex;
           flex-direction: column;
           gap: 4px;
           padding: var(--space-3) var(--space-4);
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
           border-radius: var(--radius-lg);
         }
 
@@ -194,7 +205,7 @@ function AgentPage() {
           font-size: var(--text-xs);
           color: var(--text-tertiary);
           text-transform: uppercase;
-          letter-spacing: 0.5px;
+          letter-spacing: var(--tracking-wider);
         }
 
         .bias-value {
@@ -209,16 +220,22 @@ function AgentPage() {
         }
 
         .post-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
           border-radius: var(--radius-lg);
           padding: var(--space-4);
           opacity: 0;
+          animation: revealUp 0.4s ease-out forwards;
+          transition: all var(--transition-fast);
+        }
+
+        .post-card:hover {
+          border-color: var(--border-hover);
         }
 
         .post-content {
           color: var(--text-primary);
-          line-height: 1.6;
+          line-height: var(--leading-relaxed);
           margin-bottom: var(--space-3);
         }
 
@@ -232,14 +249,16 @@ function AgentPage() {
           display: flex;
           align-items: center;
           gap: 4px;
-          font-size: var(--text-sm);
+          font-size: var(--text-xs);
           color: var(--text-tertiary);
+          font-family: var(--font-mono);
         }
 
         .post-round {
           font-size: var(--text-xs);
-          color: var(--text-tertiary);
+          color: var(--text-muted);
           margin-left: auto;
+          font-family: var(--font-mono);
         }
       `}</style>
     </div>

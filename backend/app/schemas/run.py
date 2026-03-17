@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from typing import Any
 from uuid import UUID
 
@@ -8,17 +9,17 @@ from app.models import RunStatus
 
 
 class RunBase(BaseModel):
-    title: str
+    title: str | None = None
     brand: str
     goal: str
-    content_type: str
+    content_type: str | None = None
     message: str
-    cta: str
-    tone: str
-    audience_segments: list[str] = []
-    controversy_level: str = "low"
-    agent_count: int = 20
-    round_count: int = 150
+    cta: str | None = None
+    tone: str | None = None
+    audience_segments: list[str] | None = None
+    simulation_preset: Literal["quick", "standard", "deep"] = "standard"
+    agent_count: int | None = None
+    round_count: int | None = None
     model_name: str = "qwen/qwen-plus"
     max_total_cost_usd: float = 10.0
 
@@ -38,6 +39,10 @@ class RunRead(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
+    title: str
+    brand: str
+    goal: str
+    audience_segments: list[str] = []
 
 
 class RunList(BaseModel):
@@ -87,6 +92,11 @@ class AnalysisReportExport(BaseModel):
     predicted_shareability: float
     predicted_conversion_signal: float
     predicted_trust: float
+    overall_recommendation: str
+    confidence_label: str
+    best_fit_segments: list[str]
+    risky_segments: list[str]
+    segment_reactions: list[dict[str, Any]]
     top_positive_themes: list[str]
     top_negative_themes: list[str]
     top_objections: list[str]

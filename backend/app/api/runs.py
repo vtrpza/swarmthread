@@ -17,12 +17,64 @@ from app.schemas.run import RunCreate, RunExport, RunRead
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+SIMULATION_PRESETS = {
+    "quick": {"agent_count": 12, "round_count": 60},
+    "standard": {"agent_count": 24, "round_count": 120},
+    "deep": {"agent_count": 40, "round_count": 200},
+}
+
+
+def _normalize_seed_payload(run_create: RunCreate) -> dict[str, object]:
+    title = run_create.title or f"{run_create.brand} - {run_create.goal}"
+    content_type = run_create.content_type or "general"
+    cta = run_create.cta or ""
+    tone = run_create.tone or "inferred from message"
+    audience_segments = run_create.audience_segments or []
+
+    return {
+        "title": title,
+        "content_type": content_type,
+        "cta": cta,
+        "tone": tone,
+        "audience_segments": audience_segments,
+    }
+
+
+def _resolve_simulation_settings(run_create: RunCreate) -> dict[str, int]:
+    preset = SIMULATION_PRESETS[run_create.simulation_preset]
+    return {
+        "agent_count": run_create.agent_count or preset["agent_count"],
+        "round_count": run_create.round_count or preset["round_count"],
+    }
+
+
+def _serialize_run(run: Run, seed: RunSeed) -> dict:
+    return {
+        "id": run.id,
+        "status": run.status,
+        "agent_count": run.agent_count,
+        "round_count": run.round_count,
+        "model_name": run.model_name,
+        "max_total_cost_usd": run.max_total_cost_usd,
+        "created_at": run.created_at,
+        "started_at": run.started_at,
+        "completed_at": run.completed_at,
+        "error_message": run.error_message,
+        "title": seed.title,
+        "brand": seed.brand,
+        "goal": seed.goal,
+        "audience_segments": seed.audience_segments,
+    }
+
 
 @router.post("/", response_model=RunRead, status_code=201)
-def create_run(run_create: RunCreate, session: SessionDep) -> Run:
+def create_run(run_create: RunCreate, session: SessionDep) -> dict:
+    simulation_settings = _resolve_simulation_settings(run_create)
+    seed_payload = _normalize_seed_payload(run_create)
+
     run = Run(
-        agent_count=run_create.agent_count,
-        round_count=run_create.round_count,
+        agent_count=simulation_settings["agent_count"],
+        round_count=simulation_settings["round_count"],
         model_name=run_create.model_name,
         max_total_cost_usd=run_create.max_total_cost_usd,
         status=RunStatus.queued,
@@ -33,33 +85,35 @@ def create_run(run_create: RunCreate, session: SessionDep) -> Run:
 
     seed = RunSeed(
         run_id=run.id,
-        title=run_create.title,
+        title=str(seed_payload["title"]),
         brand=run_create.brand,
         goal=run_create.goal,
-        content_type=run_create.content_type,
+        content_type=str(seed_payload["content_type"]),
         message=run_create.message,
-        cta=run_create.cta,
-        tone=run_create.tone,
-        audience_segments=run_create.audience_segments,
-        controversy_level=run_create.controversy_level,
+        cta=str(seed_payload["cta"]),
+        tone=str(seed_payload["tone"]),
+        audience_segments=list(seed_payload["audience_segments"]),
     )
     session.add(seed)
     session.commit()
     session.refresh(seed)
 
-    return run
+    return _serialize_run(run, seed)
 
 
 @router.get("/{run_id}", response_model=RunRead)
-def get_run(run_id: UUID, session: SessionDep) -> Run:
+def get_run(run_id: UUID, session: SessionDep) -> dict:
     run = session.get(Run, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    return run
+    seed = session.exec(select(RunSeed).where(RunSeed.run_id == run_id)).first()
+    if not seed:
+        raise HTTPException(status_code=404, detail="Run seed not found")
+    return _serialize_run(run, seed)
 
 
 @router.post("/{run_id}/cancel", response_model=RunRead)
-def cancel_run(run_id: UUID, session: SessionDep) -> Run:
+def cancel_run(run_id: UUID, session: SessionDep) -> dict:
     run = session.get(Run, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -69,7 +123,10 @@ def cancel_run(run_id: UUID, session: SessionDep) -> Run:
     session.add(run)
     session.commit()
     session.refresh(run)
-    return run
+    seed = session.exec(select(RunSeed).where(RunSeed.run_id == run_id)).first()
+    if not seed:
+        raise HTTPException(status_code=404, detail="Run seed not found")
+    return _serialize_run(run, seed)
 
 
 @router.get("/{run_id}/export", response_model=RunExport)
@@ -101,7 +158,7 @@ def export_run(run_id: UUID, session: SessionDep) -> dict:
     ).first()
 
     return {
-        "run": RunRead.model_validate(run),
+        "run": RunRead.model_validate(_serialize_run(run, seed)),
         "seed": {
             "title": seed.title,
             "brand": seed.brand,
@@ -111,7 +168,6 @@ def export_run(run_id: UUID, session: SessionDep) -> dict:
             "cta": seed.cta,
             "tone": seed.tone,
             "audience_segments": seed.audience_segments,
-            "controversy_level": seed.controversy_level,
         },
         "agents": [
             {
@@ -161,6 +217,21 @@ def export_run(run_id: UUID, session: SessionDep) -> dict:
             "predicted_shareability": analysis_report.predicted_shareability,
             "predicted_conversion_signal": analysis_report.predicted_conversion_signal,
             "predicted_trust": analysis_report.predicted_trust,
+            "overall_recommendation": (
+                (analysis_report.raw_json or {}).get("overall_recommendation") or "revise"
+            ),
+            "confidence_label": (
+                (analysis_report.raw_json or {}).get("confidence_label") or "medium"
+            ),
+            "best_fit_segments": (
+                (analysis_report.raw_json or {}).get("best_fit_segments") or []
+            ),
+            "risky_segments": (
+                (analysis_report.raw_json or {}).get("risky_segments") or []
+            ),
+            "segment_reactions": (
+                (analysis_report.raw_json or {}).get("segment_reactions") or []
+            ),
             "top_positive_themes": analysis_report.top_positive_themes,
             "top_negative_themes": analysis_report.top_negative_themes,
             "top_objections": analysis_report.top_objections,

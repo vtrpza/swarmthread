@@ -5,15 +5,14 @@ from pydantic import BaseModel
 
 
 class SeedBase(BaseModel):
-    title: str
+    title: str | None = None
     brand: str
     goal: str
-    content_type: str
+    content_type: str | None = None
     message: str
-    cta: str
-    tone: str
-    audience_segments: list[str] = []
-    controversy_level: str = "low"
+    cta: str | None = None
+    tone: str | None = None
+    audience_segments: list[str] | None = None
 
 
 class SeedCreate(SeedBase):

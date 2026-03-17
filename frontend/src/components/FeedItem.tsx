@@ -6,155 +6,301 @@ interface FeedItemProps {
   runId: string
 }
 
-const STANCE_COLORS: Record<string, { bg: string; text: string }> = {
-  supportive: { bg: "var(--success-bg)", text: "var(--success)" },
-  skeptical: { bg: "var(--warning-bg)", text: "var(--warning)" },
-  neutral: { bg: "var(--bg-page)", text: "var(--text-secondary)" },
-  critical: { bg: "var(--error-bg)", text: "var(--error)" },
-  curious: { bg: "var(--primary-bg)", text: "var(--primary)" },
+const STANCE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
+  supportive: {
+    bg: "var(--success-subtle)",
+    text: "var(--success)",
+    accent: "var(--success)",
+  },
+  skeptical: {
+    bg: "var(--warning-subtle)",
+    text: "var(--warning)",
+    accent: "var(--warning)",
+  },
+  neutral: {
+    bg: "var(--bg-subtle)",
+    text: "var(--text-tertiary)",
+    accent: "var(--text-muted)",
+  },
+  critical: {
+    bg: "var(--error-subtle)",
+    text: "var(--error)",
+    accent: "var(--error)",
+  },
+  curious: {
+    bg: "var(--primary-subtle)",
+    text: "var(--primary)",
+    accent: "var(--primary)",
+  },
+}
+
+function getInitials(handle: string): string {
+  // Remove numbers and underscores, get first two chars
+  const clean = handle.replace(/[_\d]/g, " ").trim()
+  const parts = clean.split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return clean.slice(0, 2).toUpperCase()
+}
+
+function formatHandle(handle: string): string {
+  return handle.startsWith("@") ? handle : `@${handle}`
 }
 
 function FeedItem({ item, runId }: FeedItemProps) {
   const stanceStyle = STANCE_COLORS[item.stance] || STANCE_COLORS.neutral
 
   return (
-    <div className="feed-item">
-      <div className="feed-item-header">
-        <Link
-          to={`/runs/${runId}/agents/${item.author_agent_id}`}
-          className="author-link"
-        >
-          <span className="author-handle">@{item.author_handle}</span>
+    <div className="fi-card" style={{ "--fi-accent": stanceStyle.accent } as React.CSSProperties}>
+      <div className="fi-inner">
+        {/* Avatar */}
+        <Link to={`/runs/${runId}/agents/${item.author_agent_id}`} className="fi-avatar" style={{ background: stanceStyle.bg, color: stanceStyle.text }}>
+          {getInitials(item.author_handle)}
         </Link>
-        <span className="author-name">{item.author_display_name}</span>
-        <span 
-          className="stance-tag"
-          style={{ 
-            background: stanceStyle.bg, 
-            color: stanceStyle.text 
-          }}
-        >
-          {item.stance}
-        </span>
-        <span className="round-badge">R{item.round_number}</span>
-      </div>
-      
-      <p className="feed-item-content">{item.content}</p>
-      
-      <div className="feed-item-footer">
-        <div className="feed-stats">
-          <span className="stat">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 14s-5.5-3.5-5.5-7A3.5 3.5 0 018 4a3.5 3.5 0 015.5 3c0 3.5-5.5 7-5.5 7z" stroke="currentColor" strokeWidth="1.5"/>
-            </svg>
-            {item.like_count}
-          </span>
-          <span className="stat">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M14 9H4a1 1 0 01-1-1V3l6-2 6 2v5a1 1 0 01-1 1z" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M4 7h8" stroke="currentColor" strokeWidth="1.5"/>
-            </svg>
-            {item.reply_count}
-          </span>
+
+        <div className="fi-body">
+          {/* Header */}
+          <div className="fi-header">
+            <div className="fi-author">
+              <Link to={`/runs/${runId}/agents/${item.author_agent_id}`} className="fi-handle">
+                {formatHandle(item.author_handle)}
+              </Link>
+              <span className="fi-dot">&middot;</span>
+              <span className="fi-persona">{item.author_display_name}</span>
+            </div>
+            <div className="fi-meta">
+              <span
+                className="fi-stance"
+                style={{ background: stanceStyle.bg, color: stanceStyle.text }}
+              >
+                {item.stance}
+              </span>
+              <span className="fi-round">R{item.round_number}</span>
+            </div>
+          </div>
+
+          {/* Content */}
+          <p className="fi-content">{item.content}</p>
+
+          {/* Footer */}
+          <div className="fi-footer">
+            <div className="fi-actions">
+              <span className="fi-action">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {item.like_count}
+              </span>
+              <span className="fi-action">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {item.reply_count}
+              </span>
+            </div>
+
+            {item.parent_post_id && (
+              <Link to={`/runs/${runId}/threads/${item.post_id}`} className="fi-thread-link">
+                View thread
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </Link>
+            )}
+          </div>
         </div>
-        {item.parent_post_id && (
-          <Link
-            to={`/runs/${runId}/threads/${item.post_id}`}
-            className="thread-link"
-          >
-            View thread →
-          </Link>
-        )}
       </div>
 
       <style>{`
-        .feed-item {
-          padding: var(--space-4) var(--space-5);
-          transition: background 0.2s;
+        .fi-card {
+          background: var(--bg-surface);
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-lg);
+          border-left: 3px solid var(--fi-accent, var(--border-default));
+          transition: all var(--transition-base);
         }
 
-        .feed-item:hover {
-          background: var(--bg-page);
+        .fi-card:hover {
+          border-color: var(--border-hover);
+          border-left-color: var(--fi-accent, var(--border-hover));
+          background: color-mix(in srgb, var(--bg-surface) 95%, var(--bg-elevated));
         }
 
-        .feed-item-header {
+        .fi-inner {
+          display: flex;
+          gap: var(--space-4);
+          padding: var(--space-5);
+        }
+
+        /* Avatar */
+        .fi-avatar {
+          flex-shrink: 0;
+          width: 38px;
+          height: 38px;
+          border-radius: var(--radius-full);
           display: flex;
           align-items: center;
-          gap: var(--space-2);
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 700;
+          font-family: var(--font-mono);
+          letter-spacing: 0.02em;
+          text-decoration: none;
+          transition: transform var(--transition-fast);
+        }
+
+        .fi-avatar:hover {
+          transform: scale(1.1);
+        }
+
+        /* Body */
+        .fi-body {
+          flex: 1;
+          min-width: 0;
+        }
+
+        /* Header */
+        .fi-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: var(--space-3);
           margin-bottom: var(--space-2);
           flex-wrap: wrap;
         }
 
-        .author-link {
-          text-decoration: none;
+        .fi-author {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          flex-wrap: wrap;
         }
 
-        .author-handle {
+        .fi-handle {
           font-weight: 600;
+          font-size: var(--text-sm);
           color: var(--text-primary);
+          text-decoration: none;
+          transition: color var(--transition-fast);
         }
 
-        .author-link:hover .author-handle {
+        .fi-handle:hover {
           color: var(--primary);
         }
 
-        .author-name {
+        .fi-dot {
+          color: var(--text-muted);
+          font-size: var(--text-xs);
+        }
+
+        .fi-persona {
           font-size: var(--text-sm);
           color: var(--text-tertiary);
         }
 
-        .stance-tag {
-          font-size: var(--text-xs);
+        .fi-meta {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          flex-shrink: 0;
+        }
+
+        .fi-stance {
+          font-size: 11px;
           padding: 2px 8px;
-          border-radius: var(--radius-sm);
-          font-weight: 500;
+          border-radius: var(--radius-full);
+          font-weight: 600;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
         }
 
-        .round-badge {
-          font-size: var(--text-xs);
-          color: var(--text-tertiary);
+        .fi-round {
+          font-size: 11px;
+          color: var(--text-muted);
+          font-family: var(--font-mono);
           padding: 2px 6px;
-          background: var(--bg-page);
+          background: var(--bg-subtle);
           border-radius: var(--radius-sm);
         }
 
-        .feed-item-content {
-          color: var(--text-primary);
-          line-height: 1.6;
-          margin-bottom: var(--space-3);
+        /* Content */
+        .fi-content {
+          color: var(--text-secondary);
+          font-size: var(--text-base);
+          line-height: var(--leading-relaxed);
+          margin: 0 0 var(--space-3) 0;
         }
 
-        .feed-item-footer {
+        /* Footer */
+        .fi-footer {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: var(--space-3);
         }
 
-        .feed-stats {
+        .fi-actions {
           display: flex;
           gap: var(--space-4);
         }
 
-        .stat {
-          display: flex;
+        .fi-action {
+          display: inline-flex;
           align-items: center;
-          gap: 4px;
-          font-size: var(--text-sm);
+          gap: 5px;
+          font-size: var(--text-xs);
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+          cursor: default;
+          transition: color var(--transition-fast);
+        }
+
+        .fi-action:hover {
           color: var(--text-tertiary);
         }
 
-        .stat svg {
+        .fi-action svg {
           opacity: 0.6;
         }
 
-        .thread-link {
-          font-size: var(--text-sm);
+        .fi-thread-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: var(--text-xs);
+          font-weight: 600;
           color: var(--primary);
+          text-decoration: none;
+          transition: all var(--transition-fast);
         }
 
-        .thread-link:hover {
-          text-decoration: underline;
+        .fi-thread-link:hover {
+          color: var(--primary-hover);
+        }
+
+        .fi-thread-link:hover svg {
+          transform: translateX(2px);
+        }
+
+        .fi-thread-link svg {
+          transition: transform var(--transition-fast);
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+          .fi-inner {
+            gap: var(--space-3);
+            padding: var(--space-4);
+          }
+
+          .fi-avatar {
+            width: 32px;
+            height: 32px;
+            font-size: 11px;
+          }
+
+          .fi-header {
+            flex-direction: column;
+            gap: var(--space-2);
+          }
         }
       `}</style>
     </div>

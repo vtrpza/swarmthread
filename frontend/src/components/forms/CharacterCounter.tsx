@@ -21,6 +21,30 @@ export function CharacterCounter({ current, max, min }: CharacterCounterProps) {
       aria-label={`${current} characters${max ? ` of ${max} maximum` : ""}`}
     >
       {displayText}
+
+      <style>{`
+        .character-counter {
+          display: block;
+          text-align: right;
+          font-size: var(--text-xs);
+          color: var(--text-muted);
+          margin-top: var(--space-2);
+          font-family: var(--font-mono);
+          letter-spacing: var(--tracking-wide);
+          font-weight: 500;
+          transition: color var(--transition-fast);
+        }
+
+        .character-counter-warning {
+          color: var(--warning);
+          font-weight: 600;
+        }
+
+        .character-counter-error {
+          color: var(--error);
+          font-weight: 600;
+        }
+      `}</style>
     </span>
   )
 }

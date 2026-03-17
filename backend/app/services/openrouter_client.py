@@ -1,11 +1,20 @@
+import asyncio
 import time
-from typing import Any
+from typing import Any, TypeVar
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.config import settings
 from app.logging import get_logger
+
+T = TypeVar("T", bound=BaseModel)
 
 logger = get_logger(__name__)
 
@@ -29,9 +38,13 @@ def get_langfuse_client():
     return _langfuse_client
 
 
+class RateLimitError(Exception):
+    pass
+
+
 class OpenRouterClient:
     def __init__(self):
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             base_url=settings.openrouter_base_url,
             api_key=settings.openrouter_api_key,
         )
@@ -39,74 +52,91 @@ class OpenRouterClient:
         self._langfuse_enabled = bool(
             settings.langfuse_public_key and settings.langfuse_secret_key
         )
+        self._semaphore = asyncio.Semaphore(settings.max_concurrent_llm_calls)
 
-    def parse(
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type(RateLimitError),
+    )
+    async def parse(
         self,
         messages: list[dict[str, str]],
-        response_model: type[BaseModel],
+        response_model: type[T],
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 1000,
         run_id: str | None = None,
         agent_id: str | None = None,
         stage: str | None = None,
-    ) -> tuple[BaseModel, dict[str, Any]]:
-        start_time = time.time()
-        model = model or self.default_model
+    ) -> tuple[T, dict[str, Any]]:
+        async with self._semaphore:
+            start_time = time.time()
+            model = model or self.default_model
 
-        try:
-            if self._langfuse_enabled:
-                result, metadata = self._parse_with_tracing(
-                    messages=messages,
-                    response_model=response_model,
+            try:
+                if self._langfuse_enabled:
+                    result, metadata = await self._parse_with_tracing(
+                        messages=messages,
+                        response_model=response_model,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        run_id=run_id,
+                        agent_id=agent_id,
+                        stage=stage,
+                    )
+                else:
+                    result, metadata = await self._parse_without_tracing(
+                        messages=messages,
+                        response_model=response_model,
+                        model=model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+
+                latency_ms = int((time.time() - start_time) * 1000)
+                metadata["latency_ms"] = latency_ms
+
+                logger.info(
+                    "openrouter_parse_success",
                     model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    run_id=run_id,
-                    agent_id=agent_id,
-                    stage=stage,
+                    latency_ms=latency_ms,
+                    prompt_tokens=metadata.get("prompt_tokens"),
+                    completion_tokens=metadata.get("completion_tokens"),
                 )
-            else:
-                result, metadata = self._parse_without_tracing(
-                    messages=messages,
-                    response_model=response_model,
+
+                return result, metadata  # type: ignore[return-value]
+
+            except Exception as e:
+                latency_ms = int((time.time() - start_time) * 1000)
+                error_str = str(e)
+                if "429" in error_str or "rate limit" in error_str.lower():
+                    logger.warning(
+                        "rate_limit_hit",
+                        model=model,
+                        latency_ms=latency_ms,
+                        retry_after=30,
+                    )
+                    raise RateLimitError(error_str) from e
+
+                logger.error(
+                    "openrouter_parse_error",
                     model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+                    error=error_str,
+                    latency_ms=latency_ms,
                 )
+                raise
 
-            latency_ms = int((time.time() - start_time) * 1000)
-            metadata["latency_ms"] = latency_ms
-
-            logger.info(
-                "openrouter_parse_success",
-                model=model,
-                latency_ms=latency_ms,
-                prompt_tokens=metadata.get("prompt_tokens"),
-                completion_tokens=metadata.get("completion_tokens"),
-            )
-
-            return result, metadata
-
-        except Exception as e:
-            latency_ms = int((time.time() - start_time) * 1000)
-            logger.error(
-                "openrouter_parse_error",
-                model=model,
-                error=str(e),
-                latency_ms=latency_ms,
-            )
-            raise
-
-    def _parse_without_tracing(
+    async def _parse_without_tracing(
         self,
         messages: list[dict[str, str]],
-        response_model: type[BaseModel],
+        response_model: type[T],
         model: str,
         temperature: float,
         max_tokens: int,
-    ) -> tuple[BaseModel, dict[str, Any]]:
-        response = self.client.chat.completions.parse(
+    ) -> tuple[T, dict[str, Any]]:
+        response = await self.client.chat.completions.parse(
             model=model,
             messages=messages,
             response_format=response_model,
@@ -130,17 +160,17 @@ class OpenRouterClient:
 
         return parsed, metadata
 
-    def _parse_with_tracing(
+    async def _parse_with_tracing(
         self,
         messages: list[dict[str, str]],
-        response_model: type[BaseModel],
+        response_model: type[T],
         model: str,
         temperature: float,
         max_tokens: int,
         run_id: str | None,
         agent_id: str | None,
         stage: str | None,
-    ) -> tuple[BaseModel, dict[str, Any]]:
+    ) -> tuple[T, dict[str, Any]]:
         langfuse_client = get_langfuse_client()
 
         with langfuse_client.start_as_current_observation(
@@ -154,7 +184,7 @@ class OpenRouterClient:
                 "model": model,
             },
         ) as observation:
-            response = self.client.chat.completions.parse(
+            response = await self.client.chat.completions.parse(
                 model=model,
                 messages=messages,
                 response_format=response_model,

@@ -1,46 +1,43 @@
-import { useState, useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 import { useCreateRun } from "../hooks/useCreateRun"
 import { useFormDraft } from "../hooks/useFormDraft"
 import {
   CharacterCounter,
-  SliderField,
   FormStepper,
   SegmentSelector,
+  SliderField,
 } from "../components/forms"
-import { AUDIENCE_SEGMENTS, CONTENT_TYPES, CONTROVERSY_LEVELS } from "../types"
-import type { RunCreate } from "../types"
+import {
+  AUDIENCE_SEGMENTS,
+  CONTENT_TYPES,
+  SIMULATION_PRESETS,
+} from "../types"
+import type { RunCreate, SimulationPreset } from "../types"
 import "./HomePage.css"
 
 const FORM_STEPS = [
-  { id: "basic", label: "Basic Info", icon: "1" },
-  { id: "content", label: "Content", icon: "2" },
-  { id: "audience", label: "Audience", icon: "3" },
-  { id: "settings", label: "Settings", icon: "4" },
+  { id: "brief", label: "Brief" },
+  { id: "audience", label: "Audience" },
 ]
+
+const AVG_DECISION_COST = 0.00036
 
 const DEFAULT_FORM: RunCreate = {
   title: "",
   brand: "",
   goal: "",
-  content_type: "thought_leadership",
   message: "",
-  cta: "",
-  tone: "",
   audience_segments: [],
-  controversy_level: "low",
-  agent_count: 20,
-  round_count: 150,
+  simulation_preset: "standard",
   max_total_cost_usd: 10.0,
 }
-
-const COST_PER_AGENT = 0.02
 
 export default function HomePage() {
   const navigate = useNavigate()
   const createRun = useCreateRun()
   const [currentStep, setCurrentStep] = useState(0)
-  const [showClearDraftConfirm, setShowClearDraftConfirm] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const {
     draft: form,
@@ -52,65 +49,33 @@ export default function HomePage() {
     defaultValue: DEFAULT_FORM,
   })
 
+  const preset = SIMULATION_PRESETS[form.simulation_preset ?? "standard"]
+
   const completedSteps = useMemo(() => {
     const completed = new Set<number>()
 
-    // Step 0: Basic Info - requires title, brand, goal
-    if (form.title.trim() && form.brand.trim() && form.goal.trim()) {
+    if (form.brand?.trim() && form.goal?.trim() && form.message?.trim()) {
       completed.add(0)
     }
 
-    // Step 1: Content - requires message, cta, tone
-    if (form.message.trim() && form.cta.trim() && form.tone.trim()) {
-      completed.add(1)
-    }
-
-    // Step 2: Audience - requires at least one segment
-    if (form.audience_segments.length > 0) {
-      completed.add(2)
-    }
-
-    // Step 3: Settings - always completable
-    completed.add(3)
-
+    completed.add(1)
     return completed
-  }, [form])
+  }, [form.brand, form.goal, form.message])
 
   const estimatedCost = useMemo(() => {
-    return (form.agent_count ?? 20) * COST_PER_AGENT
-  }, [form.agent_count])
+    return (preset.agentCount * preset.roundCount * AVG_DECISION_COST) + 0.01
+  }, [preset.agentCount, preset.roundCount])
 
   const isFormValid = useMemo(() => {
-    return (
-      form.title.trim() &&
-      form.brand.trim() &&
-      form.goal.trim() &&
-      form.message.trim() &&
-      form.cta.trim() &&
-      form.tone.trim() &&
-      form.audience_segments.length > 0
-    )
-  }, [form])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!isFormValid) return
-
-    try {
-      const result = await createRun.mutateAsync(form)
-      clearDraft()
-      navigate(`/runs/${result.id}`)
-    } catch {
-      // Error is handled by the mutation
-    }
-  }
+    return Boolean(form.brand?.trim() && form.goal?.trim() && form.message?.trim())
+  }, [form.brand, form.goal, form.message])
 
   const handleSegmentToggle = (segment: string) => {
     updateDraft((prev) => ({
       ...prev,
-      audience_segments: prev.audience_segments.includes(segment)
-        ? prev.audience_segments.filter((s) => s !== segment)
-        : [...prev.audience_segments, segment],
+      audience_segments: prev.audience_segments?.includes(segment)
+        ? prev.audience_segments.filter((value) => value !== segment)
+        : [...(prev.audience_segments ?? []), segment],
     }))
   }
 
@@ -128,313 +93,166 @@ export default function HomePage() {
     }))
   }
 
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!isFormValid) return
+
+    const payload: RunCreate = {
+      ...form,
+      title: form.title?.trim() || undefined,
+      cta: form.cta?.trim() || undefined,
+      tone: form.tone?.trim() || undefined,
+      content_type: form.content_type || undefined,
+      audience_segments:
+        form.audience_segments && form.audience_segments.length > 0
+          ? form.audience_segments
+          : undefined,
+      simulation_preset: form.simulation_preset ?? "standard",
+    }
+
+    try {
+      const result = await createRun.mutateAsync(payload)
+      clearDraft()
+      navigate(`/runs/${result.id}`)
+    } catch {
+      // Mutation state is rendered below.
+    }
+  }
+
   const renderStepContent = (step: number) => {
-    switch (step) {
-      case 0:
-        return (
-          <div className="form-section-content">
-            <div className="form-group">
-              <label className="label label-required" htmlFor="title">
-                Campaign Title
+    if (step === 0) {
+      return (
+        <div className="form-section-content">
+          <div className="form-group">
+            <div className="label-wrapper">
+              <label className="label" htmlFor="title">
+                Run Title
               </label>
+              <span className="label-hint">Optional</span>
+            </div>
+            <div className="input-wrapper">
               <input
                 id="title"
                 type="text"
-                required
-                value={form.title}
-                onChange={(e) =>
-                  updateDraft((prev) => ({ ...prev, title: e.target.value }))
+                value={form.title ?? ""}
+                onChange={(event) =>
+                  updateDraft((prev) => ({ ...prev, title: event.target.value }))
                 }
                 className="input"
-                placeholder="Enter a descriptive name for this campaign"
+                placeholder="Defaults to Brand + Goal"
                 maxLength={100}
               />
-              <CharacterCounter current={form.title.length} max={100} />
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label className="label label-required" htmlFor="brand">
-                  Brand Name
-                </label>
-                <input
-                  id="brand"
-                  type="text"
-                  required
-                  value={form.brand}
-                  onChange={(e) =>
-                    updateDraft((prev) => ({ ...prev, brand: e.target.value }))
-                  }
-                  className="input"
-                  placeholder="Your company or product name"
-                  maxLength={50}
-                />
-              </div>
-              <div className="form-group">
-                <label className="label label-required" htmlFor="goal">
-                  Campaign Goal
-                </label>
-                <input
-                  id="goal"
-                  type="text"
-                  required
-                  value={form.goal}
-                  onChange={(e) =>
-                    updateDraft((prev) => ({ ...prev, goal: e.target.value }))
-                  }
-                  className="input"
-                  placeholder="e.g., Drive newsletter signups"
-                  maxLength={100}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="label label-required" htmlFor="content_type">
-                Content Type
-              </label>
-              <select
-                id="content_type"
-                value={form.content_type}
-                onChange={(e) =>
-                  updateDraft((prev) => ({
-                    ...prev,
-                    content_type: e.target.value,
-                  }))
-                }
-                className="input select"
-              >
-                {CONTENT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type
-                      .split("_")
-                      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                      .join(" ")}
-                  </option>
-                ))}
-              </select>
-              <p className="field-help-text">
-                Choose the category that best describes your content
-              </p>
+              <CharacterCounter current={(form.title ?? "").length} max={100} />
             </div>
           </div>
-        )
 
-      case 1:
-        return (
-          <div className="form-section-content">
+          <div className="form-row form-row-divided">
             <div className="form-group">
-              <label className="label label-required" htmlFor="message">
-                Main Message
+              <label className="label label-required" htmlFor="brand">
+                Brand
               </label>
-              <textarea
-                id="message"
+              <input
+                id="brand"
+                type="text"
                 required
-                rows={6}
-                value={form.message}
-                onChange={(e) =>
-                  updateDraft((prev) => ({ ...prev, message: e.target.value }))
+                value={form.brand}
+                onChange={(event) =>
+                  updateDraft((prev) => ({ ...prev, brand: event.target.value }))
                 }
-                className="input textarea"
-                placeholder="Write the content you want to test with your audience..."
-                maxLength={2000}
-              />
-              <CharacterCounter current={form.message.length} max={2000} />
-              <p className="field-help-text">
-                This is the main content that will be shared with simulated
-                audience members
-              </p>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label className="label label-required" htmlFor="cta">
-                  Call to Action
-                </label>
-                <input
-                  id="cta"
-                  type="text"
-                  required
-                  value={form.cta}
-                  onChange={(e) =>
-                    updateDraft((prev) => ({ ...prev, cta: e.target.value }))
-                  }
-                  className="input"
-                  placeholder="e.g., Get started today"
-                  maxLength={100}
-                />
-                <CharacterCounter current={form.cta.length} max={100} />
-              </div>
-              <div className="form-group">
-                <label className="label label-required" htmlFor="tone">
-                  Tone of Voice
-                </label>
-                <input
-                  id="tone"
-                  type="text"
-                  required
-                  value={form.tone}
-                  onChange={(e) =>
-                    updateDraft((prev) => ({ ...prev, tone: e.target.value }))
-                  }
-                  className="input"
-                  placeholder="e.g., Confident, friendly, professional"
-                  maxLength={100}
-                />
-                <CharacterCounter current={form.tone.length} max={100} />
-              </div>
-            </div>
-          </div>
-        )
-
-      case 2:
-        return (
-          <div className="form-section-content">
-            <div className="form-group">
-              <label className="label">Target Audience Segments</label>
-              <p className="form-help-text">
-                Select the personas you want to simulate in this campaign
-              </p>
-              <SegmentSelector
-                selectedSegments={form.audience_segments}
-                onToggle={handleSegmentToggle}
-                onSelectAll={handleSelectAllSegments}
-                onClearAll={handleClearAllSegments}
+                className="input"
+                placeholder="Your company or product"
+                maxLength={60}
               />
             </div>
 
             <div className="form-group">
-              <label className="label" htmlFor="controversy_level">
-                Controversy Level
+              <label className="label label-required" htmlFor="goal">
+                Goal
               </label>
-              <div className="controversy-toggle">
-                {CONTROVERSY_LEVELS.map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        controversy_level: level,
-                      }))
-                    }
-                    className={`controversy-btn ${
-                      form.controversy_level === level
-                        ? `controversy-btn-${level} controversy-btn-active`
-                        : ""
-                    }`}
-                  >
-                    {level.charAt(0).toUpperCase() + level.slice(1)}
-                  </button>
-                ))}
-              </div>
-              <p className="field-help-text">
-                Higher controversy levels create more polarized reactions
-              </p>
+              <input
+                id="goal"
+                type="text"
+                required
+                value={form.goal}
+                onChange={(event) =>
+                  updateDraft((prev) => ({ ...prev, goal: event.target.value }))
+                }
+                className="input"
+                placeholder="What outcome should this message drive?"
+                maxLength={120}
+              />
             </div>
           </div>
-        )
 
-      case 3:
-        return (
-          <div className="form-section-content">
-            <div className="settings-grid">
-              <SliderField
-                id="agent_count"
-                label="Number of Agents"
-                value={form.agent_count ?? 20}
-                min={5}
-                max={100}
-                onChange={(value) =>
-                  updateDraft((prev) => ({ ...prev, agent_count: value }))
-                }
-                presets={[
-                  { label: "Small (10)", value: 10 },
-                  { label: "Medium (20)", value: 20 },
-                  { label: "Large (50)", value: 50 },
-                ]}
-              />
-
-              <SliderField
-                id="round_count"
-                label="Simulation Rounds"
-                value={form.round_count ?? 150}
-                min={50}
-                max={500}
-                step={10}
-                onChange={(value) =>
-                  updateDraft((prev) => ({ ...prev, round_count: value }))
-                }
-                presets={[
-                  { label: "Quick (100)", value: 100 },
-                  { label: "Standard (150)", value: 150 },
-                  { label: "Thorough (300)", value: 300 },
-                ]}
-              />
-
-              <SliderField
-                id="max_cost"
-                label="Max Cost Budget"
-                value={form.max_total_cost_usd ?? 10}
-                min={1}
-                max={50}
-                step={0.5}
-                onChange={(value) =>
-                  updateDraft((prev) => ({
-                    ...prev,
-                    max_total_cost_usd: value,
-                  }))
-                }
-                formatValue={(v) => `$${v.toFixed(2)}`}
-                presets={[
-                  { label: "$5", value: 5 },
-                  { label: "$10", value: 10 },
-                  { label: "$25", value: 25 },
-                ]}
-              />
-            </div>
-
-            <div className="cost-preview">
-              <div className="cost-preview-header">
-                <span>Estimated Cost</span>
-                <span className="cost-preview-value">
-                  ~${estimatedCost.toFixed(2)}
-                </span>
-              </div>
-              <div className="cost-preview-breakdown">
-                {form.agent_count} agents × ${COST_PER_AGENT.toFixed(2)} per agent
-              </div>
-              {estimatedCost > (form.max_total_cost_usd ?? 10) && (
-                <div className="cost-preview-warning">
-                  Estimated cost exceeds your budget limit
-                </div>
-              )}
-            </div>
+          <div className="form-group form-group-last">
+            <label className="label label-required" htmlFor="message">
+              Message Draft
+            </label>
+            <textarea
+              id="message"
+              required
+              rows={7}
+              value={form.message}
+              onChange={(event) =>
+                updateDraft((prev) => ({ ...prev, message: event.target.value }))
+              }
+              className="input textarea"
+              placeholder="Paste the message you want to simulate before publishing."
+              maxLength={2000}
+            />
+            <CharacterCounter current={form.message.length} max={2000} />
+            <p className="field-help-text">
+              SwarmThread will treat this as a directional audience-reaction test, not a guaranteed forecast.
+            </p>
           </div>
-        )
-
-      default:
-        return null
+        </div>
+      )
     }
+
+    return (
+      <div className="form-section-content">
+        <div className="form-group">
+          <label className="label" htmlFor="audience-segments">
+            Priority Audience Segments
+          </label>
+          <p className="form-help-text">
+            Optional. Choose the audiences you care about most. If you leave this blank, SwarmThread uses a balanced default mix.
+          </p>
+          <SegmentSelector
+            selectedSegments={form.audience_segments ?? []}
+            onToggle={handleSegmentToggle}
+            onSelectAll={handleSelectAllSegments}
+            onClearAll={handleClearAllSegments}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const handlePresetChange = (presetValue: SimulationPreset) => {
+    updateDraft((prev) => ({
+      ...prev,
+      simulation_preset: presetValue,
+    }))
   }
 
   return (
     <main className="home-page">
       <div className="home-page-container">
-        <header className="home-page-header">
-          <h1 className="home-page-title">Create New Simulation</h1>
+        <header className="home-page-header animate-reveal">
+          <h1 className="home-page-title">Create Audience Simulation</h1>
           <p className="home-page-subtitle">
-            Set up a batch simulation to predict marketing content impact
+            Pressure-test one message against a simulated audience before you publish it.
           </p>
           {hasDraft && (
             <div className="draft-indicator">
-              <span>Draft auto-saved</span>
+              <span className="draft-indicator-text">Draft saved</span>
               <button
                 type="button"
-                onClick={() => setShowClearDraftConfirm(true)}
+                onClick={clearDraft}
                 className="draft-clear-btn"
               >
-                Clear draft
+                Clear
               </button>
             </div>
           )}
@@ -447,114 +265,264 @@ export default function HomePage() {
           onStepClick={setCurrentStep}
         />
 
-        <form onSubmit={handleSubmit} className="home-page-form">
+        <form onSubmit={handleSubmit} className="home-page-form animate-scale">
           <div className="form-section-wrapper">
             <div className="form-section-header">
-              <h2 className="form-section-title">
-                <span className="form-section-icon">{FORM_STEPS[currentStep].icon}</span>
-                {FORM_STEPS[currentStep].label}
-              </h2>
-              <div className="form-section-progress">
-                {completedSteps.has(currentStep) && (
-                  <span className="section-complete-badge">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Complete
-                  </span>
-                )}
-              </div>
+              <h2 className="form-section-title">{FORM_STEPS[currentStep].label}</h2>
+              {completedSteps.has(currentStep) && (
+                <span className="section-complete-badge">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Ready
+                </span>
+              )}
             </div>
-
             {renderStepContent(currentStep)}
+          </div>
+
+          <div className="settings-panel">
+            <button
+              type="button"
+              className="settings-panel-toggle"
+              onClick={() => setShowSettings((current) => !current)}
+              aria-expanded={showSettings}
+            >
+              <div className="settings-panel-toggle-left">
+                <span className="settings-panel-title">Advanced</span>
+                <span className="settings-panel-summary">
+                  {preset.label} preset, {preset.agentCount} agents, {preset.roundCount} rounds, ${(
+                    form.max_total_cost_usd ?? 10
+                  ).toFixed(0)} budget
+                </span>
+              </div>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className={`settings-panel-chevron ${showSettings ? "settings-panel-chevron-open" : ""}`}
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {showSettings && (
+              <div className="settings-panel-content">
+                <div className="preset-grid">
+                  {(Object.entries(SIMULATION_PRESETS) as Array<
+                    [SimulationPreset, (typeof SIMULATION_PRESETS)[SimulationPreset]]
+                  >).map(([presetValue, config]) => (
+                    <button
+                      key={presetValue}
+                      type="button"
+                      className={`preset-card ${
+                        (form.simulation_preset ?? "standard") === presetValue
+                          ? "preset-card-active"
+                          : ""
+                      }`}
+                      onClick={() => handlePresetChange(presetValue)}
+                    >
+                      <span className="preset-card-label">{config.label}</span>
+                      <span className="preset-card-meta">
+                        {config.agentCount} agents · {config.roundCount} rounds
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="form-row form-row-divided">
+                  <div className="form-group">
+                    <label className="label" htmlFor="content_type">
+                      Content Type
+                    </label>
+                    <div className="select-wrapper">
+                      <select
+                        id="content_type"
+                        value={form.content_type ?? ""}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            content_type: event.target.value || undefined,
+                          }))
+                        }
+                        className="input select"
+                      >
+                        <option value="">Infer from message</option>
+                        {CONTENT_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type
+                              .split("_")
+                              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                              .join(" ")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="label" htmlFor="tone">
+                      Tone Hint
+                    </label>
+                    <input
+                      id="tone"
+                      type="text"
+                      value={form.tone ?? ""}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({ ...prev, tone: event.target.value }))
+                      }
+                      className="input"
+                      placeholder="Optional tone guidance"
+                      maxLength={100}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="label" htmlFor="cta">
+                    CTA Hint
+                  </label>
+                  <input
+                    id="cta"
+                    type="text"
+                    value={form.cta ?? ""}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({ ...prev, cta: event.target.value }))
+                    }
+                    className="input"
+                    placeholder="Optional CTA or desired next step"
+                    maxLength={120}
+                  />
+                </div>
+
+                <SliderField
+                  id="max_cost"
+                  label="Max Budget"
+                  value={form.max_total_cost_usd ?? 10}
+                  min={1}
+                  max={50}
+                  step={0.5}
+                  onChange={(value) =>
+                    updateDraft((prev) => ({
+                      ...prev,
+                      max_total_cost_usd: value,
+                    }))
+                  }
+                  formatValue={(value) => `$${value.toFixed(2)}`}
+                  presets={[
+                    { label: "$5", value: 5 },
+                    { label: "$10", value: 10 },
+                    { label: "$25", value: 25 },
+                  ]}
+                />
+
+                <div className="cost-preview">
+                  <div className="cost-preview-header">
+                    <span className="cost-preview-label">Estimated LLM Cost</span>
+                    <span className="cost-preview-value">~${estimatedCost.toFixed(2)}</span>
+                  </div>
+                  <div className="cost-preview-breakdown">
+                    Based on the {preset.label.toLowerCase()} preset and average call size for the current default model.
+                  </div>
+                  {estimatedCost > (form.max_total_cost_usd ?? 10) && (
+                    <div className="cost-preview-warning">
+                      Estimated cost is above your budget cap. Increase the cap or choose a lighter preset.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="form-navigation">
             <button
               type="button"
-              onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+              onClick={() => setCurrentStep((step) => Math.max(0, step - 1))}
               disabled={currentStep === 0}
               className="btn btn-secondary"
             >
               Previous
             </button>
 
-            {currentStep < FORM_STEPS.length - 1 ? (
-              <button
-                type="button"
-                onClick={() => setCurrentStep((s) => Math.min(FORM_STEPS.length - 1, s + 1))}
-                className="btn btn-primary"
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={createRun.isPending || !isFormValid}
-                className="btn btn-primary btn-lg"
-              >
-                {createRun.isPending ? (
-                  <>
-                    <span className="btn-spinner" />
-                    Creating Run...
-                  </>
-                ) : (
-                  "Create Simulation Run"
-                )}
-              </button>
-            )}
+            <div className="form-navigation-right">
+              {currentStep < FORM_STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep((step) => Math.min(step + 1, FORM_STEPS.length - 1))}
+                  className="btn btn-primary"
+                >
+                  Continue
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={createRun.isPending || !isFormValid}
+                  className="btn btn-primary btn-launch"
+                >
+                  {createRun.isPending ? "Creating..." : "Launch Simulation"}
+                </button>
+              )}
+            </div>
           </div>
 
           {createRun.isError && (
             <div className="error-state" role="alert">
-              <div className="error-state-title">Error</div>
+              <div className="error-state-title">Failed to create run</div>
               <div>
                 {createRun.error instanceof Error
                   ? createRun.error.message
-                  : "Failed to create run"}
+                  : "Unknown error"}
               </div>
             </div>
           )}
         </form>
       </div>
 
-      {showClearDraftConfirm && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowClearDraftConfirm(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="clear-draft-title"
-        >
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 id="clear-draft-title" className="modal-title">
-              Clear Draft?
-            </h3>
-            <p className="modal-description">
-              This will remove all saved form data and reset to defaults.
-            </p>
-            <div className="modal-actions">
-              <button
-                type="button"
-                onClick={() => setShowClearDraftConfirm(false)}
-                className="btn btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  clearDraft()
-                  setShowClearDraftConfirm(false)
-                }}
-                className="btn btn-primary"
-              >
-                Clear Draft
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <style>{`
+        .preset-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: var(--space-3);
+          margin-bottom: var(--space-6);
+        }
+
+        .preset-card {
+          padding: var(--space-4);
+          border-radius: var(--radius-lg);
+          border: 1px solid var(--border-default);
+          background: var(--bg-surface);
+          text-align: left;
+          transition: all var(--transition-fast);
+        }
+
+        .preset-card:hover {
+          border-color: var(--border-hover);
+        }
+
+        .preset-card-active {
+          border-color: var(--primary);
+          background: var(--primary-subtle);
+        }
+
+        .preset-card-label {
+          display: block;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: var(--space-1);
+        }
+
+        .preset-card-meta {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+
+        @media (max-width: 768px) {
+          .preset-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </main>
   )
 }

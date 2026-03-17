@@ -69,7 +69,6 @@ class RunSeed(SQLModel, table=True):
     cta: str
     tone: str
     audience_segments: list[str] = Field(default_factory=list, sa_column=Column(JSON))
-    controversy_level: str = Field(default="low")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

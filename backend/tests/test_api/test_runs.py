@@ -45,19 +45,33 @@ def test_create_run(client: TestClient):
     response = client.post(
         "/runs/",
         json={
-            "title": "Test Campaign",
             "brand": "Test Brand",
             "goal": "Test goal",
-            "content_type": "thought_leadership",
             "message": "Test message",
-            "cta": "Test CTA",
-            "tone": "confident",
             "audience_segments": ["test_segment"],
-            "controversy_level": "low",
         },
     )
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "queued"
-    assert data["agent_count"] == 20
-    assert data["round_count"] == 150
+    assert data["agent_count"] == 24
+    assert data["round_count"] == 120
+    assert data["title"] == "Test Brand - Test goal"
+    assert data["audience_segments"] == ["test_segment"]
+
+
+def test_create_run_with_quick_preset(client: TestClient):
+    response = client.post(
+        "/runs/",
+        json={
+            "brand": "Test Brand",
+            "goal": "Test goal",
+            "message": "Test message",
+            "simulation_preset": "quick",
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["agent_count"] == 12
+    assert data["round_count"] == 60

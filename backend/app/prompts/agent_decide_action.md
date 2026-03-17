@@ -11,7 +11,6 @@ Message: {{message}}
 Call to Action: {{cta}}
 Tone: {{tone}}
 Audience Segments: {{audience_segments}}
-Controversy Level: {{controversy_level}}
 
 ## Your Persona
 
@@ -32,6 +31,9 @@ Your Recent Actions (last 10): {{recent_actions}}
 ## Recent Feed
 
 {{recent_feed}}
+
+Use the `Post ID` values from the recent feed for `target_post_id`.
+Use the `Agent ID` values from the recent feed authors for `target_agent_id`.
 
 ## Available Actions
 
@@ -65,4 +67,5 @@ Respond with a JSON object matching this schema:
 - Your stance should reflect your persona's biases
 - Posts and replies should be engaging and realistic
 - Consider your existing follows when deciding interactions
+- Only use target IDs that appear in the recent feed context
 - Idle if you have nothing relevant to contribute
